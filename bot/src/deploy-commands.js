@@ -20,15 +20,38 @@ const commands = [
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
     .addIntegerOption(o => o.setName("amount").setDescription("Number of messages (1-100)").setRequired(true).setMinValue(1).setMaxValue(100)),
   new SlashCommandBuilder().setName("modlogs").setDescription("Show recent moderation logs")
+    .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers),
+  new SlashCommandBuilder().setName("timeout").setDescription("Timeout a member")
     .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers)
+    .addUserOption(o => o.setName("user").setDescription("Member to timeout").setRequired(true))
+    .addIntegerOption(o => o.setName("minutes").setDescription("Timeout duration in minutes (1-40320)").setRequired(true).setMinValue(1).setMaxValue(40320))
+    .addStringOption(o => o.setName("reason").setDescription("Reason for timeout").setMaxLength(500)),
+  new SlashCommandBuilder().setName("untimeout").setDescription("Remove a member timeout")
+    .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers)
+    .addUserOption(o => o.setName("user").setDescription("Member to untimeout").setRequired(true))
+    .addStringOption(o => o.setName("reason").setDescription("Reason for removing timeout").setMaxLength(500)),
+  new SlashCommandBuilder().setName("kick").setDescription("Kick a member")
+    .setDefaultMemberPermissions(PermissionFlagsBits.KickMembers)
+    .addUserOption(o => o.setName("user").setDescription("Member to kick").setRequired(true))
+    .addStringOption(o => o.setName("reason").setDescription("Reason for kick").setMaxLength(500)),
+  new SlashCommandBuilder().setName("ban").setDescription("Ban a member")
+    .setDefaultMemberPermissions(PermissionFlagsBits.BanMembers)
+    .addUserOption(o => o.setName("user").setDescription("Member to ban").setRequired(true))
+    .addStringOption(o => o.setName("reason").setDescription("Reason for ban").setMaxLength(500))
 ];
 
 async function registerCommands() {
   const { DISCORD_TOKEN, DISCORD_CLIENT_ID, DISCORD_GUILD_ID } = process.env;
-  if (!DISCORD_TOKEN || !DISCORD_CLIENT_ID || !DISCORD_GUILD_ID) throw new Error("Set DISCORD_TOKEN, DISCORD_CLIENT_ID, and DISCORD_GUILD_ID");
+  if (!DISCORD_TOKEN || !DISCORD_CLIENT_ID) throw new Error("Set DISCORD_TOKEN and DISCORD_CLIENT_ID");
   const rest = new REST({ version: "10" }).setToken(DISCORD_TOKEN);
-  await rest.put(Routes.applicationGuildCommands(DISCORD_CLIENT_ID, DISCORD_GUILD_ID), { body: commands.map(c => c.toJSON()) });
-  console.log("Registered " + commands.length + " guild slash commands.");
+  const body = commands.map(c => c.toJSON());
+  if (DISCORD_GUILD_ID) {
+    await rest.put(Routes.applicationGuildCommands(DISCORD_CLIENT_ID, DISCORD_GUILD_ID), { body });
+    console.log("Registered " + commands.length + " guild slash commands for " + DISCORD_GUILD_ID + ".");
+  } else {
+    await rest.put(Routes.applicationCommands(DISCORD_CLIENT_ID), { body });
+    console.log("Registered " + commands.length + " global slash commands. Discord global propagation can take some time.");
+  }
 }
-if (require.main === module) registerCommands().catch(error => { console.error(error); process.exitCode = 1; });
+if (require.main === module) registerCommands().catch(error => { console.error("Slash-command registration failed:", error.message); process.exitCode = 1; });
 module.exports = { commands, registerCommands };
