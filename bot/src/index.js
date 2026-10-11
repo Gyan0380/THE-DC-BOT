@@ -1,6 +1,7 @@
 require("dotenv").config();
 const { Client, GatewayIntentBits, Events, PermissionFlagsBits, ChannelType } = require("discord.js");
 const { connectDb, getDb } = require("./db");
+const { registerCommands } = require("./deploy-commands");
 const { DEFAULT_RULES } = require("./default-rules");
 const { getGuildSettings, patchGuildSettings } = require("./guild-settings");
 const { inspectMessage, saveReview } = require("./moderation");
@@ -98,7 +99,7 @@ client.on(Events.InteractionCreate, async interaction => {
         await interaction.reply({ content: "You need Manage Server permission.", ephemeral: true }); return;
       }
       const raw = interaction.options.getString("rules", true);
-      const rules = raw.split("\n").map(line => line.trim()).filter(Boolean).slice(0, 30);
+      const rules = raw.split(/\n|\s*\|\s*/).map(line => line.trim()).filter(Boolean).slice(0, 30);
       if (!rules.length) { await interaction.reply({ content: "Add at least one rule, one per line.", ephemeral: true }); return; }
       await patchGuildSettings(interaction.guildId, { rules });
       await interaction.reply({ content: "Saved " + rules.length + " rules. The /rules command now uses these rules.", ephemeral: true });
@@ -171,6 +172,7 @@ client.on(Events.InteractionCreate, async interaction => {
 async function start() {
   if (!process.env.DISCORD_TOKEN) throw new Error("DISCORD_TOKEN is missing");
   await connectDb();
+  if (process.env.DISCORD_CLIENT_ID && process.env.DISCORD_GUILD_ID) await registerCommands();
   await client.login(process.env.DISCORD_TOKEN);
 }
 
