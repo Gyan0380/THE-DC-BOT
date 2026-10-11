@@ -80,3 +80,6 @@ Add `AI_KEY_ENCRYPTION_SECRET` to Railway service variables. It must be a random
 - The AI is instructed to classify only saved rules. Uncertain cases are sent for moderator review. Automatic timeout is only considered for a high-confidence finding when the matched rule explicitly contains a timeout duration. Administrators and Manage Server members are exempt from that automatic timeout path.
 - A successful key check confirms current authentication only. It does not guarantee credit balance, future uptime, or complete security. `/diagnose` cannot reliably read remaining API credits; check the provider's billing dashboard if requests stop working.
 - Commands are currently registered to `DISCORD_GUILD_ID` at startup. For servers where commands do not appear, register the commands for that server or switch to global command registration.
+
+
+AI usage note: To reduce token spend, the AI path first uses lightweight candidate signals (links/invites, repeated characters, long messages, mass mentions, and selected rule-related keywords). This is a cost-saving prefilter, so it can miss subtle violations that do not trigger those signals; it is not a guarantee that every message is AI-reviewed. Provider free tiers and pricing can change.
