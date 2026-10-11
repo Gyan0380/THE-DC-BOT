@@ -303,7 +303,8 @@ client.on(Events.InteractionCreate, async interaction => {
 async function start() {
   if (!process.env.DISCORD_TOKEN) throw new Error("DISCORD_TOKEN is missing");
   await connectDb();
-  if (process.env.DISCORD_CLIENT_ID && process.env.DISCORD_GUILD_ID) await registerCommands();
+  if (process.env.DISCORD_CLIENT_ID) await registerCommands();
+  else console.warn("DISCORD_CLIENT_ID is missing; slash commands were not registered.");
   await client.login(process.env.DISCORD_TOKEN);
 }
 
