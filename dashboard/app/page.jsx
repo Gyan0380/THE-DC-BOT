@@ -14,7 +14,7 @@ export default function Home() {
   const [channels, setChannels] = useState([]);
   const [channelError, setChannelError] = useState("");
   const [moderationForm, setModerationForm] = useState({ action: "timeout", userId: "", minutes: 10, reason: "" });
-  const [settings, setSettings] = useState({ welcome: { enabled: false, channelId: "", message: "Welcome {user} to {server}!" }, goodbye: { enabled: false, channelId: "", message: "Goodbye {user}!" }, rules: [], automod: { enabled: false }, moderation: {}, giveaways: {}, logs: {} });
+  const [settings, setSettings] = useState({ welcome: { enabled: false, channelId: "", message: "Welcome {user} to {server}!" }, goodbye: { enabled: false, channelId: "", message: "Goodbye {user}!" }, rules: [], automod: { enabled: false, autoTimeoutMinutes: 0 }, moderation: {}, giveaways: {}, logs: {} });
   const [rulesText, setRulesText] = useState("");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
@@ -52,7 +52,7 @@ export default function Home() {
           welcome: { enabled: Boolean(s.welcome?.enabled), channelId: s.welcome?.channelId || "", message: s.welcome?.message || "Welcome {user} to {server}!" },
           goodbye: { enabled: Boolean(s.goodbye?.enabled), channelId: s.goodbye?.channelId || "", message: s.goodbye?.message || "Goodbye {user}!" },
           rules: Array.isArray(s.rules) ? s.rules : [],
-          automod: { enabled: Boolean(s.automod?.enabled) },
+          automod: { enabled: Boolean(s.automod?.enabled), autoTimeoutMinutes: Number(s.automod?.autoTimeoutMinutes || 0) },
           moderation: s.moderation || {}, giveaways: s.giveaways || {}, logs: s.logs || {}
         });
         setRulesText((s.rules || []).map(r => typeof r === "string" ? r : r.title ? r.title + (r.description ? ": " + r.description : "") : JSON.stringify(r)).join("\n"));
@@ -149,7 +149,10 @@ export default function Home() {
             {channelError && <p className="hint">Channel list: {channelError} You can also configure channels with /welcome-setup and /goodbye-setup in Discord.</p>}
           </>}
           {active === "Rules" && <><label className="fieldLabel">Rules (one per line)</label><textarea rows={8} value={rulesText} onChange={e => setRulesText(e.target.value)} placeholder={"Be respectful\nNo spam\nFollow moderator instructions"}/><p className="hint">Each line becomes one rule. These are shared with /rules. You can also set them in Discord using /rules-set.</p></>}
-          {active === "AutoMod" && <label className="toggle"><span><b>Enable AutoMod configuration</b><small>Save the preference. Existing bot checks may not use this switch yet.</small></span><input type="checkbox" checked={settings.automod.enabled} onChange={e => setSettings(p => ({...p, automod:{...p.automod, enabled:e.target.checked}}))}/></label>}
+          {active === "AutoMod" && <>
+            <label className="toggle"><span><b>Enable automatic message checks</b><small>Detects suspicious promotion links and message floods.</small></span><input type="checkbox" checked={settings.automod.enabled} onChange={e => setSettings(p => ({...p, automod:{...p.automod, enabled:e.target.checked}}))}/></label>
+            <label className="fieldLabel">Automatic timeout duration (minutes)</label><input type="number" min="0" max="40320" value={settings.automod.autoTimeoutMinutes} onChange={e => setSettings(p => ({...p, automod:{...p.automod, autoTimeoutMinutes:Number(e.target.value)}}))}/><p className="hint">Set 0 to only send a rule-review DM without automatically timing out. A positive value enables timeout for the bot's supported detections only. Custom rules written as plain text are displayed in /rules but are not automatically understood as detection logic.</p>
+          </>}
           {active === "Moderation" && <>
             <p className="muted">Enter the target member's Discord ID (Developer Mode → right-click member → Copy User ID). Discord bot permissions and role hierarchy still apply.</p>
             <label className="fieldLabel">Action</label><select value={moderationForm.action} onChange={e => setModerationForm(p => ({...p, action:e.target.value}))}><option value="timeout">Timeout</option><option value="untimeout">Remove timeout</option><option value="kick">Kick</option><option value="ban">Ban</option></select>
