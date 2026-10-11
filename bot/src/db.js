@@ -27,10 +27,20 @@ async function connectDb() {
   const existing = getApps().find(app => app.name === appName);
   const app = existing || initializeApp({ credential: cert(serviceAccount), projectId: serviceAccount.project_id }, appName);
   database = getFirestore(app);
-  await database.collection("_health").doc("connection").set({
-    service: "the-dc-bot",
-    checkedAt: new Date().toISOString()
-  }, { merge: true });
+  const healthRef = database.collection("_health").doc("connection");
+  const heartbeat = async () => {
+    await healthRef.set({
+      service: "the-dc-bot",
+      checkedAt: new Date().toISOString()
+    }, { merge: true });
+  };
+  await heartbeat();
+  // Keep a live heartbeat so the dashboard can distinguish a running bot
+  // from a stale startup record. Do not keep Node alive just for this timer.
+  const timer = setInterval(() => {
+    heartbeat().catch(error => console.error("Bot heartbeat failed:", error.message));
+  }, 30000);
+  if (typeof timer.unref === "function") timer.unref();
   console.log("Connected to Firebase Cloud Firestore project:", serviceAccount.project_id);
   return database;
 }
