@@ -84,6 +84,7 @@ async function saveReview(client, message, finding) {
     points: finding.points,
     action,
     durationMinutes: action === "timeout" ? finding.durationMinutes : null,
+    messageDeleted: Boolean(finding.messageDeleted),
     status: action === "timeout" ? "completed" : "warning",
     source: "rules",
     createdAt: now
@@ -100,6 +101,7 @@ async function saveReview(client, message, finding) {
         { name: "Channel", value: "<#" + message.channelId + ">" },
         { name: "Signal", value: finding.reason },
         { name: "Action", value: action === "timeout" ? "Timeout · " + finding.durationMinutes + " min" : "DM warning" },
+        { name: "Spam message deleted", value: finding.messageDeleted ? "Yes" : "No (check Manage Messages permission)" },
         { name: "Review ID", value: ref.id }
       ).setTimestamp(now);
     await logChannel.send({ embeds: [embed] }).catch(console.error);
