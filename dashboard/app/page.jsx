@@ -14,7 +14,7 @@ export default function Home() {
   const [channels, setChannels] = useState([]);
   const [channelError, setChannelError] = useState("");
   const [moderationForm, setModerationForm] = useState({ action: "timeout", userId: "", minutes: 10, reason: "" });
-  const [settings, setSettings] = useState({ welcome: { enabled: false, channelId: "", message: "Welcome {user} to {server}!" }, goodbye: { enabled: false, channelId: "", message: "Goodbye {user}!" }, rules: [], automod: { enabled: false, autoTimeoutMinutes: 0 }, moderation: {}, giveaways: {}, logs: {} });
+  const [settings, setSettings] = useState({ welcome: { enabled: false, channelId: "", message: "Welcome {user} to {server}!" }, goodbye: { enabled: false, channelId: "", message: "Goodbye {user}!" }, rules: [], automod: { enabled: false, autoTimeoutMinutes: 0 }, spamDetection: { messages: 5, windowSeconds: 6, repeats: 4, repeatWindowSeconds: 15 }, moderation: {}, giveaways: {}, logs: {} });
   const [rulesText, setRulesText] = useState("");
   const [aiInfo, setAiInfo] = useState({ configured: false, enabled: false, provider: "", keyOwnerId: "" });
   const [aiProvider, setAiProvider] = useState("gemini");
@@ -61,7 +61,7 @@ export default function Home() {
           goodbye: { enabled: Boolean(s.goodbye?.enabled), channelId: s.goodbye?.channelId || "", message: s.goodbye?.message || "Goodbye {user}!" },
           rules: Array.isArray(s.rules) ? s.rules : [],
           ai: s.ai || {},
-          automod: { enabled: Boolean(s.automod?.enabled), autoTimeoutMinutes: Number(s.automod?.autoTimeoutMinutes || 0) },
+          automod: { enabled: Boolean(s.automod?.enabled), autoTimeoutMinutes: Number(s.automod?.autoTimeoutMinutes || 0) },\n          spamDetection: { messages: Number(s.spamDetection?.messages || 5), windowSeconds: Number(s.spamDetection?.windowSeconds || 6), repeats: Number(s.spamDetection?.repeats || 4), repeatWindowSeconds: Number(s.spamDetection?.repeatWindowSeconds || 15) },
           moderation: s.moderation || {}, giveaways: s.giveaways || {}, logs: s.logs || {}
         });
         setRulesText((s.rules || []).map(r => typeof r === "string" ? r : r.title ? r.title + (r.description ? ": " + r.description : "") : JSON.stringify(r)).join("\n"));
@@ -189,7 +189,28 @@ export default function Home() {
             <label className="fieldLabel">Goodbye message template</label><textarea rows={3} value={settings.goodbye.message} onChange={e => setSettings(p => ({...p, goodbye:{...p.goodbye, message:e.target.value}}))}/><p className="hint">Use {"{user}"} and {"{server}"} placeholders. Save changes to activate them.</p>
             {channelError && <p className="hint">Channel list: {channelError} You can also configure channels with /welcome-setup and /goodbye-setup in Discord.</p>}
           </>}
-          {active === "Rules" && <><label className="fieldLabel">Rules (one per line)</label><textarea rows={8} value={rulesText} onChange={e => setRulesText(e.target.value)} placeholder={"Be respectful\nNo spam\nFollow moderator instructions"}/><p className="hint">Each line becomes one rule. These are shared with /rules. You can also set them in Discord using /rules-set.</p></>}
+          {active === "Rules" && <>
+            <h3>Server rules and headings</h3>
+            <p className="hint">Use headings starting with #, for example # CHAT RULES. The /rules command will display the heading and the rules below it.</p>
+            <div className="actions" style={{justifyContent:"flex-start",flexWrap:"wrap",borderTop:0,paddingTop:0}}>
+              <button className="secondary" type="button" onClick={() => setRulesText(v => (v ? v + "\\n" : "") + "# CHAT RULES\\nDon't spam in chat")}>+ Chat rules</button>
+              <button className="secondary" type="button" onClick={() => setRulesText(v => (v ? v + "\\n" : "") + "# GENERAL RULES\\nBe respectful to everyone")}>+ General rules</button>
+              <button className="secondary" type="button" onClick={() => setRulesText(v => (v ? v + "\\n" : "") + "# VOICE CHAT RULES\\nNo mic spam")}>+ Voice rules</button>
+              <button className="secondary" type="button" onClick={() => setRulesText(v => (v ? v + "\\n" : "") + "Don't spam in chat (30 minutes timeout)")}>+ Spam rule</button>
+            </div>
+            <label className="fieldLabel">Rules editor (one rule or # heading per line)</label>
+            <textarea rows={10} value={rulesText} onChange={e => setRulesText(e.target.value)} placeholder={"# CHAT RULES\\nDon't spam in chat (30 minutes timeout)\\nNo advertising\\n# GENERAL RULES\\nBe respectful"}/>
+            <div className="sectionDivider"></div>
+            <h3>Spam detection customisation</h3>
+            <p className="hint">These settings control the built-in spam detector. Timeout duration is read from the matching spam rule above.</p>
+            <div className="moduleGrid">
+              <div><label className="fieldLabel">Messages in burst</label><input type="number" min="2" max="30" value={settings.spamDetection?.messages ?? 5} onChange={e => setSettings(p => ({...p,spamDetection:{...p.spamDetection,messages:Number(e.target.value)}}))}/></div>
+              <div><label className="fieldLabel">Burst window (seconds)</label><input type="number" min="1" max="60" value={settings.spamDetection?.windowSeconds ?? 6} onChange={e => setSettings(p => ({...p,spamDetection:{...p.spamDetection,windowSeconds:Number(e.target.value)}}))}/></div>
+              <div><label className="fieldLabel">Same message repeats</label><input type="number" min="2" max="20" value={settings.spamDetection?.repeats ?? 4} onChange={e => setSettings(p => ({...p,spamDetection:{...p.spamDetection, repeats:Number(e.target.value)}}))}/></div>
+              <div><label className="fieldLabel">Repeat window (seconds)</label><input type="number" min="2" max="120" value={settings.spamDetection?.repeatWindowSeconds ?? 15} onChange={e => setSettings(p => ({...p,spamDetection:{...p.spamDetection,repeatWindowSeconds:Number(e.target.value)}}))}/></div>
+            </div>
+            <p className="hint">Example: 5 messages in 6 seconds OR the same message 4 times in 15 seconds. Bot needs Manage Messages to delete spam and Moderate Members to apply timeout.</p>
+          </>}
           {active === "AutoMod" && <>
             <label className="toggle"><span><b>Enable automatic message checks</b><small>Detects suspicious promotion links and message floods.</small></span><input type="checkbox" checked={settings.automod.enabled} onChange={e => setSettings(p => ({...p, automod:{...p.automod, enabled:e.target.checked}}))}/></label>
             <label className="fieldLabel">Automatic timeout duration (minutes)</label><input type="number" min="0" max="40320" value={settings.automod.autoTimeoutMinutes} onChange={e => setSettings(p => ({...p, automod:{...p.automod, autoTimeoutMinutes:Number(e.target.value)}}))}/><p className="hint">Set 0 to only send a rule-review DM without automatically timing out. A positive value enables timeout for the bot's supported detections only. Custom rules written as plain text are displayed in /rules but are not automatically understood as detection logic.</p>
