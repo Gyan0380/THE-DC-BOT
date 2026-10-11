@@ -67,7 +67,7 @@ async function callAi(settings, messages, maxTokens = 500) {
 
 async function classifyMessage(settings, message, rules) {
   const usableRules = (Array.isArray(rules) ? rules : []).map((rule, index) => ({
-    id: typeof rule === "string" ? ((rule.match(/^\\s*(\\d+(?:\\.\\d+)?)/)?.[1]) || String(index + 1)) : String(rule.id || index + 1),
+    id: typeof rule === "string" ? ((rule.match(/^\s*(\d+(?:\.\d+)?)/)?.[1]) || String(index + 1)) : String(rule.id || index + 1),
     text: typeof rule === "string" ? rule : String(rule.text || rule.description || rule.title || "")
   })).filter(rule => rule.text.trim());
   if (!usableRules.length) return { status: "clear", reason: "No server rules configured." };
