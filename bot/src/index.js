@@ -5,8 +5,10 @@ const { registerCommands } = require("./deploy-commands");
 const { DEFAULT_RULES } = require("./default-rules");
 const { getGuildSettings, patchGuildSettings } = require("./guild-settings");
 const { inspectMessage, saveReview } = require("./moderation");
+const { PROVIDERS, getProviderConfig, validateApiKey, classifyMessage } = require("./ai-provider");
+const { encryptApiKey, decryptApiKey } = require("./ai-key-vault");
 const { openWelcomePanel, openPunishPanel, handlePanelInteraction, dmMember, logAction, dashUrl } = require("./panels");
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require("discord.js");
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
@@ -61,28 +63,48 @@ client.on(Events.MessageCreate, async message => {
   try {
     const settings = await getGuildSettings(message.guildId);
     if (settings.automod?.enabled === false) return;
+    const aiConfig = getProviderConfig(settings);
+    if (aiConfig?.enabled && Array.isArray(settings.rules) && settings.rules.length) {
+      try {
+        const finding = await classifyMessage(settings, message, settings.rules);
+        if (finding.status === "review" || finding.status === "violation") {
+          const review = {
+            status: "review", ruleId: finding.ruleId || "unknown",
+            reason: "AI " + finding.status + " (" + Math.round(finding.confidence * 100) + "%): " + finding.reason,
+            points: 0, confidence: finding.confidence, source: "ai"
+          };
+          await saveReview(client, message, review);
+          // Automatic punishments are only eligible when the saved rule itself explicitly defines a timeout duration.
+          // Until the rule/action is reviewed and configured, ambiguous AI findings remain moderator-review only.
+          const ruleText = String(finding.ruleText || "");
+          const timeoutMatch = ruleText.match(/\btimeout\s*(?:for\s*)?(\d+)\s*(minutes?|mins?|hours?|days?)\b/i);
+          if (finding.status === "violation" && finding.confidence >= 0.97 && timeoutMatch) {
+            const unit = timeoutMatch[2].toLowerCase();
+            const multiplier = unit.startsWith("day") ? 1440 : unit.startsWith("hour") ? 60 : 1;
+            const minutes = Number(timeoutMatch[1]) * multiplier;
+            const member = message.member || await message.guild.members.fetch(message.author.id).catch(() => null);
+            const isExempt = member?.permissions?.has(PermissionFlagsBits.Administrator) || member?.permissions?.has(PermissionFlagsBits.ManageGuild);
+            if (minutes > 0 && minutes <= 40320 && member?.moderatable && !isExempt) {
+              const reason = "Configured rule " + finding.ruleId + ": " + finding.reason;
+              await member.timeout(minutes * 60000, reason);
+              const dmSent = await dmMember(member.user, message.guild, client.user, "Automatic timeout", "A configured server rule was matched: **" + String(finding.ruleId) + "**.\nReason: " + finding.reason, minutes + " minutes");
+              await logAction(message.guildId, { action: "ai_auto_timeout", userId: member.id, username: member.user.tag, moderatorId: client.user.id, moderatorName: client.user.tag, reason, ruleId: finding.ruleId, durationMinutes: minutes, confidence: finding.confidence, dmSent, status: "completed" });
+            }
+          }
+        }
+      } catch (aiError) {
+        // Do not log provider response bodies or secrets; keep the failure safe and moderator-visible.
+        console.error("AI moderation unavailable:", aiError.message);
+      }
+      return;
+    }
     const finding = inspectMessage(message);
     if (finding.status === "review") {
       await saveReview(client, message, finding);
-      const autoMinutes = Number(settings.automod?.autoTimeoutMinutes || 0);
-      if (autoMinutes > 0 && autoMinutes <= 40320) {
-        const member = message.member || await message.guild.members.fetch(message.author.id).catch(() => null);
-        if (member?.moderatable && !member.permissions.has(PermissionFlagsBits.Administrator)) {
-          const ruleText = Array.isArray(settings.rules) ? settings.rules[Number.parseInt(String(finding.ruleId), 10) - 1] : null;
-          const ruleName = typeof ruleText === "string" ? ruleText : ("Rule " + finding.ruleId);
-          const reason = "Automated rule signal: " + ruleName + " — " + finding.reason;
-          await member.timeout(autoMinutes * 60000, reason);
-          const dmSent = await dmMember(member.user, message.guild, client.user, "Automatic timeout", "The bot detected a possible violation of **" + ruleName + "**.\nDetails: " + finding.reason, autoMinutes + " minutes");
-          await logAction(message.guildId, { action: "auto_timeout", userId: member.id, username: member.user.tag, moderatorId: client.user.id, moderatorName: client.user.tag, reason, ruleId: finding.ruleId, durationMinutes: autoMinutes, dmSent, status: "completed" });
-        } else {
-          await dmMember(message.author, message.guild, client.user, "Rule review notice", "A message was flagged for moderator review under Rule " + finding.ruleId + ": " + finding.reason + ". No timeout was applied.", null);
-        }
-      } else {
-        await dmMember(message.author, message.guild, client.user, "Rule review notice", "A message was flagged for moderator review under Rule " + finding.ruleId + ": " + finding.reason + ". No automatic punishment was applied.", null);
-      }
+      await dmMember(message.author, message.guild, client.user, "Rule review notice", "A message was flagged for moderator review under Rule " + finding.ruleId + ": " + finding.reason + ". No automatic punishment was applied.", null);
     }
   } catch (error) {
-    console.error("Message review failed:", error);
+    console.error("Message review failed:", error.message);
   }
 });
 
@@ -96,11 +118,63 @@ async function sendModLog(guild, entry) {
 client.on(Events.InteractionCreate, async interaction => {
   let command = interaction.isChatInputCommand() ? interaction.commandName : "component";
   try {
+    if (interaction.isModalSubmit() && interaction.customId.startsWith("ai-key-submit:")) {
+      if (!interaction.guild || !isModerator(interaction, PermissionFlagsBits.ManageGuild)) {
+        await interaction.reply({ content: "Only server managers can configure this server's AI key.", ephemeral: true }); return;
+      }
+      await interaction.deferReply({ ephemeral: true });
+      const provider = interaction.customId.split(":")[1];
+      const apiKey = interaction.fields.getTextInputValue("api_key").trim();
+      if (!PROVIDERS[provider] || apiKey.length < 12 || apiKey.length > 500) {
+        await interaction.editReply("Invalid provider or key format. Nothing was saved."); return;
+      }
+      const check = await validateApiKey(provider, apiKey);
+      if (!check.ok) { await interaction.editReply("❌ API key check failed. " + check.message + "\nNo key was saved."); return; }
+      try {
+        const encryptedKey = encryptApiKey(apiKey);
+        await patchGuildSettings(interaction.guildId, { ai: { provider, model: PROVIDERS[provider].defaultModel, encryptedKey, keyOwnerId: interaction.user.id, enabled: true, updatedAt: new Date().toISOString() } });
+        await interaction.editReply("✅ " + PROVIDERS[provider].label + " key validated and saved encrypted for this server. " + check.message + "\nUse /diagnose to check the setup. Keep your encryption secret configured in Railway.");
+      } catch (error) {
+        await interaction.editReply("❌ Key was validated but could not be saved securely. Set AI_KEY_ENCRYPTION_SECRET in Railway to a random secret of at least 32 characters, redeploy, then run /ai-setup again.").catch(() => {});
+      }
+      return;
+    }
     if (interaction.isButton() || interaction.isStringSelectMenu() || interaction.isChannelSelectMenu() || interaction.isModalSubmit()) {
       const handled = await handlePanelInteraction(interaction);
       if (handled) return;
     }
     if (!interaction.isChatInputCommand()) return;
+    if (interaction.commandName === "ai-setup") {
+      if (!interaction.guild || !isModerator(interaction, PermissionFlagsBits.ManageGuild)) { await interaction.reply({ content: "You need Manage Server permission in a server.", ephemeral: true }); return; }
+      const provider = interaction.options.getString("provider", true);
+      if (!PROVIDERS[provider]) { await interaction.reply({ content: "Choose Gemini or DeepSeek.", ephemeral: true }); return; }
+      const modal = new ModalBuilder().setCustomId("ai-key-submit:" + provider).setTitle("Configure " + PROVIDERS[provider].label);
+      const keyInput = new TextInputBuilder().setCustomId("api_key").setLabel("API key (never share in chat)").setStyle(TextInputStyle.Short).setRequired(true).setMinLength(12).setMaxLength(500).setPlaceholder("Paste your provider API key");
+      modal.addComponents(new ActionRowBuilder().addComponents(keyInput));
+      await interaction.showModal(modal); return;
+    }
+    if (interaction.commandName === "diagnose") {
+      if (!interaction.guild || !isModerator(interaction, PermissionFlagsBits.ManageGuild)) { await interaction.reply({ content: "You need Manage Server permission.", ephemeral: true }); return; }
+      await interaction.deferReply({ ephemeral: true });
+      const checks = [];
+      try { await getDb().collection("_health").doc("connection").get(); checks.push("✅ Firestore reachable"); } catch { checks.push("❌ Firestore unreachable"); }
+      const settings = await getGuildSettings(interaction.guildId).catch(() => ({}));
+      const cfg = getProviderConfig(settings);
+      if (!cfg) checks.push("⚠️ No Gemini/DeepSeek API key configured for this server");
+      else {
+        checks.push("✅ Provider configured: " + PROVIDERS[cfg.provider].label + " (" + cfg.model + ")");
+        try {
+          const key = decryptApiKey(cfg.encryptedKey);
+          const valid = await validateApiKey(cfg.provider, key);
+          checks.push((valid.ok ? "✅" : "❌") + " Provider authentication: " + valid.message);
+          checks.push(cfg.enabled ? "✅ AI moderation enabled" : "⚠️ AI moderation disabled");
+          checks.push("ℹ️ Key owner: " + (cfg.keyOwnerId ? "<@" + cfg.keyOwnerId + ">" : "unknown"));
+        } catch (e) { checks.push("❌ Key decryption failed. Check AI_KEY_ENCRYPTION_SECRET; do not rotate it unless you intend to reconfigure saved keys."); }
+      }
+      checks.push("ℹ️ API credit balance is not reliably exposed by a key-validation check; review the provider billing dashboard too.");
+      checks.push("ℹ️ Ambiguous matches go to moderator review. No API key or key fragment is displayed here.");
+      await interaction.editReply("**THE DC BOT diagnostics**\n" + checks.join("\n")); return;
+    }
     if (interaction.commandName === "dashboard") {
       const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setLabel("Open THE DC BOT Dashboard").setStyle(ButtonStyle.Link).setURL(dashUrl));
       await interaction.reply({ content: "Open the dashboard and sign in with Discord. If you are not logged in, the site will redirect you to Discord login.", components: [row], ephemeral: true });
