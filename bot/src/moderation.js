@@ -10,11 +10,11 @@ function detectPromotionChannel(channel) {
 // Conservative signal detection only, not a final policy decision.
 function inspectMessage(message) {
   const content = (message.content || "").trim();
-  const looksLikePromo = /(https?:\\/\\/|discord\\.gg\\/|youtube\\.com\\/|youtu\\.be\\/|twitch\\.tv\\/)/i.test(content);
+  const looksLikePromo = /(https?:\/\/|discord\.gg\/|youtube\.com\/|youtu\.be\/|twitch\.tv\/)/i.test(content);
   if (looksLikePromo && !detectPromotionChannel(message.channel)) {
     return { status: "review", ruleId: "3.2", reason: "Possible promotion outside a promotion channel", points: 2 };
   }
-  if (content.length > 1800 || /(.)\\1{14,}/u.test(content)) {
+  if (content.length > 1800 || /(.)\1{14,}/u.test(content)) {
     return { status: "review", ruleId: "4", reason: "Possible message flood", points: 2 };
   }
   return { status: "clear" };
