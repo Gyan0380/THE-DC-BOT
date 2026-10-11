@@ -193,13 +193,13 @@ export default function Home() {
             <h3>Server rules and headings</h3>
             <p className="hint">Use headings starting with #, for example # CHAT RULES. The /rules command will display the heading and the rules below it.</p>
             <div className="actions" style={{justifyContent:"flex-start",flexWrap:"wrap",borderTop:0,paddingTop:0}}>
-              <button className="secondary" type="button" onClick={() => setRulesText(v => (v ? v + "\\n" : "") + "# CHAT RULES\\nDon't spam in chat")}>+ Chat rules</button>
-              <button className="secondary" type="button" onClick={() => setRulesText(v => (v ? v + "\\n" : "") + "# GENERAL RULES\\nBe respectful to everyone")}>+ General rules</button>
-              <button className="secondary" type="button" onClick={() => setRulesText(v => (v ? v + "\\n" : "") + "# VOICE CHAT RULES\\nNo mic spam")}>+ Voice rules</button>
-              <button className="secondary" type="button" onClick={() => setRulesText(v => (v ? v + "\\n" : "") + "Don't spam in chat (30 minutes timeout)")}>+ Spam rule</button>
+              <button className="secondary" type="button" onClick={() => setRulesText(v => (v ? v + "\n" : "") + "# CHAT RULES\nDon't spam in chat")}>+ Chat rules</button>
+              <button className="secondary" type="button" onClick={() => setRulesText(v => (v ? v + "\n" : "") + "# GENERAL RULES\nBe respectful to everyone")}>+ General rules</button>
+              <button className="secondary" type="button" onClick={() => setRulesText(v => (v ? v + "\n" : "") + "# VOICE CHAT RULES\nNo mic spam")}>+ Voice rules</button>
+              <button className="secondary" type="button" onClick={() => setRulesText(v => (v ? v + "\n" : "") + "Don't spam in chat (30 minutes timeout)")}>+ Spam rule</button>
             </div>
             <label className="fieldLabel">Rules editor (one rule or # heading per line)</label>
-            <textarea rows={10} value={rulesText} onChange={e => setRulesText(e.target.value)} placeholder={"# CHAT RULES\\nDon't spam in chat (30 minutes timeout)\\nNo advertising\\n# GENERAL RULES\\nBe respectful"}/>
+            <textarea rows={10} value={rulesText} onChange={e => setRulesText(e.target.value)} placeholder={"# CHAT RULES\nDon't spam in chat (30 minutes timeout)\nNo advertising\n# GENERAL RULES\nBe respectful"}/>
             <div className="sectionDivider"></div>
             <h3>Spam detection customisation</h3>
             <p className="hint">These settings control the built-in spam detector. Timeout duration is read from the matching spam rule above.</p>
