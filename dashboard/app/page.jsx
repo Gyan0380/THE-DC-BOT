@@ -216,24 +216,24 @@ export default function Home() {
             <div className="sectionDivider"></div>
             <h3>Selected rules & channel settings</h3>
             <p className="hint">Choose the channels where each rule is active. If “All channels” is selected, exclusions are respected. Channel-specific automatic enforcement depends on the bot handler supporting that rule type.</p>
-            {rulesText.split("\\n").map(line => line.trim()).filter(line => line && !line.startsWith("#")).map((line,i) => {
-              const title = line.replace(/ \\([^)]*\\)$/,"");
+            {rulesText.split("\n").map(line => line.trim()).filter(line => line && !line.startsWith("#")).map((line,i) => {
+              const title = line.replace(/ \([^)]*\)$/,"");
               const policy = rulePolicies[title] || {allChannels:true,channelIds:[],excludedChannelIds:[]};
               return <div className="panel" key={title+"-"+i}>
-                <div className="panelHeading"><div><b>{title}</b><p className="hint">{line}</p></div><button className="secondary" type="button" onClick={() => {setRulesText(v=>v.split("\\n").filter(x=>x.trim()!==line).join("\\n"));setRulePolicies(p=>{const n={...p};delete n[title];return n;});}}>Remove</button></div>
+                <div className="panelHeading"><div><b>{title}</b><p className="hint">{line}</p></div><button className="secondary" type="button" onClick={() => {setRulesText(v=>v.split("\n").filter(x=>x.trim()!==line).join("\n"));setRulePolicies(p=>{const n={...p};delete n[title];return n;});}}>Remove</button></div>
                 <label className="toggle"><span><b>Apply in all channels</b><small>Turn off to choose specific channels.</small></span><input type="checkbox" checked={Boolean(policy.allChannels)} onChange={e=>setRulePolicies(p=>({...p,[title]:{...policy,allChannels:e.target.checked}}))}/></label>
                 {!policy.allChannels && <div className="moduleGrid" style={{marginTop:12}}>
                   {channels.map(ch => <label className="toggle" key={ch.id}><span><b>#{ch.name}</b></span><input type="checkbox" checked={(policy.channelIds||[]).includes(ch.id)} onChange={e=>setRulePolicies(p=>({...p,[title]:{...policy,channelIds:e.target.checked?[...(policy.channelIds||[]),ch.id]:(policy.channelIds||[]).filter(id=>id!==ch.id)}}))}/></label>)}
                   {channels.length===0 && <p className="hint">No text channels loaded. Check the bot's channel-list permissions.</p>}
                 </div>}
                 <label className="fieldLabel">Points for this rule</label>
-                <input type="number" min="0" max="100" value={Number((line.match(/\\b(\\d+) points?\\b/i)||[])[1]||0)} onChange={e=>setRulesText(v=>v.split("\\n").map(x=>x===line?x.replace(/ \\(\\d+ points?\\)/i,"")+" ("+Number(e.target.value)+" points)":x).join("\\n"))}/>
+                <input type="text" inputMode="numeric" value={(line.match(/\((\d*) points?\)/i)||[])[1] ?? ""} onChange={e=>{const raw=e.target.value.replace(/\D/g,"");setRulesText(v=>v.split("\n").map(x=>x===line?x.replace(/ \(\d* points?\)/i,"")+" ("+raw+" points)":x).join("\n"));}}/>
                 <label className="fieldLabel">Timeout (minutes, 0 = no timeout)</label>
-                <input type="number" min="0" max="40320" value={Number((line.match(/\\((\\d+) minutes? timeout\\)/i)||[])[1]||0)} onChange={e=>setRulesText(v=>v.split("\\n").map(x=>x===line?x.replace(/ \\(\\d+ minutes? timeout\\)/i,"")+" ("+Number(e.target.value)+" minutes timeout)":x).join("\\n"))}/>
+                <input type="text" inputMode="numeric" value={(line.match(/\((\d*) minutes? timeout\)/i)||[])[1] ?? ""} onChange={e=>{const raw=e.target.value.replace(/\D/g,"");setRulesText(v=>v.split("\n").map(x=>x===line?x.replace(/ \(\d* minutes? timeout\)/i,"")+" ("+raw+" minutes timeout)":x).join("\n"));}}/>
               </div>;
             })}
             <label className="fieldLabel">Rules / headings editor</label>
-            <textarea rows={6} value={rulesText} onChange={e=>setRulesText(e.target.value)} placeholder={"# CHAT RULES\\nDon't spam in chat (30 minutes timeout) (2 points)\\n# GENERAL RULES\\nBe respectful to members (1 point)"}/>
+            <textarea rows={6} value={rulesText} onChange={e=>setRulesText(e.target.value)} placeholder={"# CHAT RULES\nDon't spam in chat (30 minutes timeout) (2 points)\n# GENERAL RULES\nBe respectful to members (1 point)"}/>
             <div className="sectionDivider"></div>
             <h3>Spam detection thresholds</h3>
             <div className="moduleGrid">
