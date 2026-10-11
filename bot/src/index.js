@@ -78,11 +78,13 @@ client.on(Events.MessageCreate, async message => {
           // Automatic punishments are only eligible when the saved rule itself explicitly defines a timeout duration.
           // Until the rule/action is reviewed and configured, ambiguous AI findings remain moderator-review only.
           const ruleText = String(finding.ruleText || "");
-          const timeoutMatch = ruleText.match(/\btimeout\s*(?:for\s*)?(\d+)\s*(minutes?|mins?|hours?|days?)\b/i);
+          const timeoutMatch = ruleText.match(/\btimeout\s*(?:for\s*)?(\d+)\s*(days?|hours?|minutes?|mins?)(?:\s*(\d+)\s*(hours?|minutes?|mins?))?\b/i);
           if (finding.status === "violation" && finding.confidence >= 0.97 && timeoutMatch) {
             const unit = timeoutMatch[2].toLowerCase();
             const multiplier = unit.startsWith("day") ? 1440 : unit.startsWith("hour") ? 60 : 1;
-            const minutes = Number(timeoutMatch[1]) * multiplier;
+            const extraUnit = String(timeoutMatch[4] || "").toLowerCase();
+            const extraMultiplier = extraUnit.startsWith("hour") ? 60 : 1;
+            const minutes = Number(timeoutMatch[1]) * multiplier + (Number(timeoutMatch[3] || 0) * extraMultiplier);
             const member = message.member || await message.guild.members.fetch(message.author.id).catch(() => null);
             if (minutes > 0 && minutes <= 40320 && member?.moderatable) {
               const reason = "Configured rule " + finding.ruleId + ": " + finding.reason;
