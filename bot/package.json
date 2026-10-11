@@ -1,0 +1,18 @@
+{
+  "name": "the-dc-bot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Discord moderation and community bot starter",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "deploy-commands": "node src/deploy-commands.js",
+    "check": "node --check src/index.js && node --check src/moderation.js && node --check src/giveaways.js"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "discord.js": "^14.22.1",
+    "dotenv": "^16.6.1",
+    "mongodb": "^6.19.0"
+  }
+}
