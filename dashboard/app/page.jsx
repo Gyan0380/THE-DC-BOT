@@ -61,7 +61,8 @@ export default function Home() {
         setSettings({
           welcome: { enabled: Boolean(s.welcome?.enabled), channelId: s.welcome?.channelId || "", message: s.welcome?.message || "Welcome {user} to {server}!" },
           goodbye: { enabled: Boolean(s.goodbye?.enabled), channelId: s.goodbye?.channelId || "", message: s.goodbye?.message || "Goodbye {user}!" },
-          rules: Array.isArray(s.rules) ? s.rules : [],\n          rulePolicies: s.rulePolicies && typeof s.rulePolicies === "object" ? s.rulePolicies : {},
+          rules: Array.isArray(s.rules) ? s.rules : [],
+          rulePolicies: s.rulePolicies && typeof s.rulePolicies === "object" ? s.rulePolicies : {},
           ai: s.ai || {},
           automod: { enabled: Boolean(s.automod?.enabled), autoTimeoutMinutes: Number(s.automod?.autoTimeoutMinutes || 0) },
           spamDetection: { messages: Number(s.spamDetection?.messages || 5), windowSeconds: Number(s.spamDetection?.windowSeconds || 6), repeats: Number(s.spamDetection?.repeats || 4), repeatWindowSeconds: Number(s.spamDetection?.repeatWindowSeconds || 15) },
