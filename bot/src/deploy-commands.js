@@ -1,5 +1,5 @@
 require("dotenv").config();
-const { REST, Routes, SlashCommandBuilder, PermissionFlagsBits, ChannelType } = require("discord.js");
+const { REST, Routes, SlashCommandBuilder, PermissionFlagsBits } = require("discord.js");
 
 const commands = [
   new SlashCommandBuilder().setName("rules").setDescription("Show server rules"),
@@ -41,17 +41,12 @@ const commands = [
 ];
 
 async function registerCommands() {
-  const { DISCORD_TOKEN, DISCORD_CLIENT_ID, DISCORD_GUILD_ID } = process.env;
+  const { DISCORD_TOKEN, DISCORD_CLIENT_ID } = process.env;
   if (!DISCORD_TOKEN || !DISCORD_CLIENT_ID) throw new Error("Set DISCORD_TOKEN and DISCORD_CLIENT_ID");
   const rest = new REST({ version: "10" }).setToken(DISCORD_TOKEN);
   const body = commands.map(c => c.toJSON());
-  if (DISCORD_GUILD_ID) {
-    await rest.put(Routes.applicationGuildCommands(DISCORD_CLIENT_ID, DISCORD_GUILD_ID), { body });
-    console.log("Registered " + commands.length + " guild slash commands for " + DISCORD_GUILD_ID + ".");
-  } else {
-    await rest.put(Routes.applicationCommands(DISCORD_CLIENT_ID), { body });
-    console.log("Registered " + commands.length + " global slash commands. Discord global propagation can take some time.");
-  }
+  await rest.put(Routes.applicationCommands(DISCORD_CLIENT_ID), { body });
+  console.log("Registered " + commands.length + " GLOBAL slash commands. Discord global propagation can take some time.");
 }
 if (require.main === module) registerCommands().catch(error => { console.error("Slash-command registration failed:", error.message); process.exitCode = 1; });
 module.exports = { commands, registerCommands };
