@@ -5,12 +5,28 @@ const { registerCommands } = require("./deploy-commands");
 const { DEFAULT_RULES } = require("./default-rules");
 const { getGuildSettings, patchGuildSettings } = require("./guild-settings");
 const { inspectMessage, saveReview } = require("./moderation");
+const { openWelcomePanel, openPunishPanel, handlePanelInteraction, dmMember, logAction, dashUrl } = require("./panels");
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
 });
 
 client.once(Events.ClientReady, ready => console.log("Logged in as " + ready.user.tag));
+
+client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
+  try {
+    const before = oldMember.communicationDisabledUntilTimestamp;
+    const after = newMember.communicationDisabledUntilTimestamp;
+    if (before && !after) {
+      const audit = await newMember.guild.fetchAuditLogs({ type: 24, limit: 5 }).catch(() => null);
+      const latest = audit?.entries?.find(e => e.target?.id === newMember.id);
+      const moderator = latest?.executor || client.user;
+      const dmSent = await dmMember(newMember.user, newMember.guild, moderator, "Timeout ended", "Your timeout has expired or was removed.", null);
+      await logAction(newMember.guild.id, { action: "timeout_expired", userId: newMember.id, username: newMember.user.tag, moderatorId: moderator.id, moderatorName: moderator.tag || "THE DC BOT", reason: "Timeout expired or removed", dmSent, status: "completed" });
+    }
+  } catch (error) { console.error("Timeout expiry notification failed:", error); }
+});
 
 client.on(Events.GuildMemberAdd, async member => {
   try {
@@ -60,9 +76,22 @@ async function sendModLog(guild, entry) {
 }
 
 client.on(Events.InteractionCreate, async interaction => {
-  if (!interaction.isChatInputCommand() || !interaction.guild) return;
-  const command = interaction.commandName;
+  let command = interaction.isChatInputCommand() ? interaction.commandName : "component";
   try {
+    if (interaction.isButton() || interaction.isStringSelectMenu() || interaction.isChannelSelectMenu() || interaction.isModalSubmit()) {
+      const handled = await handlePanelInteraction(interaction);
+      if (handled) return;
+    }
+    if (!interaction.isChatInputCommand()) return;
+    if (interaction.commandName === "dashboard") {
+      const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setLabel("Open THE DC BOT Dashboard").setStyle(ButtonStyle.Link).setURL(dashUrl));
+      await interaction.reply({ content: "Open the dashboard and sign in with Discord. If you are not logged in, the site will redirect you to Discord login.", components: [row], ephemeral: true });
+      return;
+    }
+    if (!interaction.guild) return;
+    command = interaction.commandName;
+    if (command === "welcome-config") { await openWelcomePanel(interaction); return; }
+    if (command === "punish") { await openPunishPanel(interaction); return; }
     if (command === "rules") {
       const settings = await getGuildSettings(interaction.guildId);
       let rules = Array.isArray(settings.rules) && settings.rules.length ? settings.rules : null;
