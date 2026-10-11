@@ -244,8 +244,9 @@ client.on(Events.InteractionCreate, async interaction => {
       const reason = interaction.options.getString("reason") || "No reason provided";
       if (!target.moderatable || target.id === interaction.user.id) { await interaction.reply({ content: "I cannot timeout that member. Check role hierarchy and permissions.", ephemeral: true }); return; }
       await target.timeout(minutes * 60 * 1000, reason);
-      await sendModLog(interaction.guild, { action: "timeout", userId: target.id, username: target.user.tag, moderatorId: interaction.user.id, reason, durationMinutes: minutes, status: "completed" });
-      await interaction.reply({ content: "Timed out " + target.user.tag + " for " + minutes + " minute(s). Reason: " + reason, ephemeral: true });
+      const dmSent = await dmMember(target.user, interaction.guild, interaction.user, "timeout", reason, minutes + " minute(s)");
+      await sendModLog(interaction.guild, { action: "timeout", userId: target.id, username: target.user.tag, moderatorId: interaction.user.id, moderatorName: interaction.user.tag, reason, durationMinutes: minutes, dmSent, status: "completed" });
+      await interaction.reply({ content: "Timed out " + target.user.tag + " for " + minutes + " minute(s). Reason: " + reason + "\n" + (dmSent ? "✅ DM notification sent." : "⚠️ Timeout applied, but DM could not be delivered (the member may have DMs disabled or blocked the bot)."), ephemeral: true });
       return;
     }
 
