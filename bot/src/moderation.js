@@ -1,5 +1,9 @@
 const { EmbedBuilder } = require("discord.js");
 
+// Lightweight in-memory rate tracking. Resets when the bot restarts.
+const recentMessages = new Map();
+const spamAlerts = new Map();
+
 function detectPromotionChannel(channel) {
   const name = (channel?.name || "").toLowerCase();
   const category = (channel?.parent?.name || "").toLowerCase();
