@@ -3,7 +3,8 @@ import { setSession } from "../../../../../lib/session";
 export async function GET(request){
  const u=new URL(request.url),code=u.searchParams.get("code"),state=u.searchParams.get("state"),saved=request.cookies.get("dc_oauth_state")?.value;
  const fail=(message)=>NextResponse.redirect(new URL("/?authError="+encodeURIComponent(message),u.origin));
- if(!code||!state||!saved||state!==saved)return fail("Discord login check failed. Please try again.");
+ if(!code)return fail("Discord did not return an authorization code. Check the OAuth redirect URL.");
+ if(!state||!saved||state!==saved)return fail("Discord login state expired or the login cookie was blocked. Retry from the same dashboard URL and allow cookies.");
  const clientId=process.env.DISCORD_CLIENT_ID,clientSecret=process.env.DISCORD_CLIENT_SECRET,redirect=process.env.DISCORD_REDIRECT_URI;
  if(!clientId||!clientSecret||!redirect||!process.env.SESSION_SECRET)return fail("Discord OAuth is not configured in Vercel.");
  try{
