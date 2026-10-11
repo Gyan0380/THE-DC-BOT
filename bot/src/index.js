@@ -63,6 +63,17 @@ client.on(Events.MessageCreate, async message => {
   try {
     const settings = await getGuildSettings(message.guildId);
     if (settings.automod?.enabled === false) return;
+
+    // Run built-in spam/flood checks even when AI moderation is configured.
+    const deterministicFinding = inspectMessage(message);
+    if (deterministicFinding.status === "review") {
+      await saveReview(client, message, deterministicFinding);
+      const dmSent = await dmMember(message.author, message.guild, client.user, "Rule review notice",
+        "Your message activity was flagged for moderator review under Rule " + deterministicFinding.ruleId + ": " + deterministicFinding.reason + ". No automatic punishment was applied.", null);
+      console.log("Moderation review flagged:", { guildId: message.guildId, userId: message.author.id, ruleId: deterministicFinding.ruleId, dmSent });
+      return;
+    }
+
     const aiConfig = getProviderConfig(settings);
     if (aiConfig?.enabled && Array.isArray(settings.rules) && settings.rules.length) {
       if (!shouldInspectWithAi(message, settings.rules)) return;
