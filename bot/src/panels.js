@@ -64,6 +64,32 @@ async function openPunishPanel(interaction) {
 }
 
 async function handlePanelInteraction(interaction) {
+  if (interaction.isButton() && interaction.customId.startsWith("welcome:edit:")) {
+    const kind = interaction.customId.split(":")[2];
+    const settings = await getGuildSettings(interaction.guildId);
+    const current = settings[kind]?.message || (kind === "welcome" ? "Welcome {user} to {server}!" : "Goodbye {user}!");
+    const modal = new ModalBuilder().setCustomId("welcome:message:" + kind).setTitle(kind === "welcome" ? "Edit Welcome Message" : "Edit Goodbye Message");
+    modal.addComponents(new ActionRowBuilder().addComponents(textInput("message", "Message ({user}, {server})", TextInputStyle.Paragraph, true, current.slice(0, 900))));
+    await interaction.showModal(modal);
+    return true;
+  }
+  if (interaction.isButton() && interaction.customId.startsWith("welcome:disable:")) {
+    const kind = interaction.customId.split(":")[2];
+    const settings = await getGuildSettings(interaction.guildId);
+    const old = settings[kind] || {};
+    await patchGuildSettings(interaction.guildId, { [kind]: { ...old, enabled: false } });
+    await interaction.update({ content: "**" + kind + "** messages are now disabled.", components: [] });
+    return true;
+  }
+  if (interaction.isModalSubmit() && interaction.customId.startsWith("welcome:message:")) {
+    const kind = interaction.customId.split(":")[2];
+    const settings = await getGuildSettings(interaction.guildId);
+    const old = settings[kind] || {};
+    const message = interaction.fields.getTextInputValue("message").trim();
+    await patchGuildSettings(interaction.guildId, { [kind]: { ...old, enabled: true, message } });
+    await interaction.reply({ content: "Saved the " + kind + " message template.", ephemeral: true });
+    return true;
+  }
   if (interaction.isStringSelectMenu() && interaction.customId === "welcome:kind") {
     const kind = interaction.values[0];
     const row = new ActionRowBuilder().addComponents(
@@ -82,7 +108,11 @@ async function handlePanelInteraction(interaction) {
     const old = settings[kind] || {};
     const fallback = kind === "welcome" ? "Welcome {user} to {server}!" : "Goodbye {user}!";
     await patchGuildSettings(interaction.guildId, { [kind]: { ...old, enabled: true, channelId, message: old.message || fallback, dmOnAction: true } });
-    await interaction.update({ content: "Saved **" + kind + "** channel as <#" + channelId + "> and enabled it. To customize the message, use the dashboard.", components: [] });
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId("welcome:edit:" + kind).setLabel("Edit message").setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId("welcome:disable:" + kind).setLabel("Disable").setStyle(ButtonStyle.Secondary)
+    );
+    await interaction.update({ content: "Saved **" + kind + "** channel as <#" + channelId + "> and enabled it. You can now edit the message or disable this section.", components: [row] });
     return true;
   }
 
