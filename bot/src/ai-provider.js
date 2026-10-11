@@ -65,6 +65,18 @@ async function callAi(settings, messages, maxTokens = 500) {
   return JSON.parse(data.choices?.[0]?.message?.content || "{}");
 }
 
+function shouldInspectWithAi(message, rules) {
+  const content = String(message.content || "").trim();
+  if (!content) return false;
+  if (/https?:\\/\\/|discord\\.gg\\/|discord\\.com\\/invite|www\\./i.test(content)) return true;
+  if ((message.mentions?.users?.size || 0) >= 3 || (message.mentions?.roles?.size || 0) >= 3 || (content.match(/@everyone|@here/g) || []).length) return true;
+  if (/(.)\\1{8,}/u.test(content) || content.length > 500) return true;
+  const ruleText = (Array.isArray(rules) ? rules : []).map(r => typeof r === "string" ? r : String(r.text || r.description || r.title || "")).join(" ").toLowerCase();
+  const triggerWords = ["spam", "advert", "promotion", "promo", "18+", "adult", "nsfw", "scam", "abuse", "harass", "threat", "mention", "flood", "caps", "gaali", "gali", "insult", "slur", "porn", "sex", "illegal", "self-harm", "suicide", "dm me", "free nitro"];
+  const normalized = content.toLowerCase();
+  return triggerWords.some(word => ruleText.includes(word) && normalized.includes(word));
+}
+
 async function classifyMessage(settings, message, rules) {
   const usableRules = (Array.isArray(rules) ? rules : []).map((rule, index) => ({
     id: typeof rule === "string" ? ((rule.match(/^\s*(\d+(?:\.\d+)?)/)?.[1]) || String(index + 1)) : String(rule.id || index + 1),
@@ -86,4 +98,4 @@ async function classifyMessage(settings, message, rules) {
   return { status: result.status, ruleId: result.status === "clear" ? null : rule.id, confidence: Math.max(0, Math.min(1, confidence)), reason: String(result.reason || "No reason supplied").slice(0, 500), ruleText: rule.text };
 }
 
-module.exports = { PROVIDERS, getProviderConfig, validateApiKey, callAi, classifyMessage };
+module.exports = { PROVIDERS, getProviderConfig, validateApiKey, callAi, classifyMessage, shouldInspectWithAi };
