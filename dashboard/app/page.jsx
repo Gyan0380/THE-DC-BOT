@@ -198,8 +198,8 @@ export default function Home() {
               <button className="secondary" type="button" onClick={() => setRulesText(v => (v ? v + "\n" : "") + "# GENERAL RULES\nBe respectful to everyone")}>+ General rules</button>
               <button className="secondary" type="button" onClick={() => setRulesText(v => (v ? v + "\n" : "") + "# VOICE CHAT RULES\nNo mic spam")}>+ Voice rules</button>
               <button className="secondary" type="button" onClick={() => setRulesText(v => (v ? v + "\n" : "") + "Don't spam in chat (30 minutes timeout) (2 points)")}>+ Spam rule · timeout + points</button>
-              <button className="secondary" type="button" onClick={() => setRulesText(v => (v ? v + "\\n" : "") + "Be respectful to members (1 point)")}>+ Rule · 1 point</button>
-              <button className="secondary" type="button" onClick={() => setRulesText(v => (v ? v + "\\n" : "") + "No advertising (3 points)")}>+ Rule · 3 points</button>
+              <button className="secondary" type="button" onClick={() => setRulesText(v => (v ? v + "\n" : "") + "Be respectful to members (1 point)")}>+ Rule · 1 point</button>
+              <button className="secondary" type="button" onClick={() => setRulesText(v => (v ? v + "\n" : "") + "No advertising (3 points)")}>+ Rule · 3 points</button>
             </div>
             <label className="fieldLabel">Rules editor (one rule or # heading per line)</label>
             <textarea rows={10} value={rulesText} onChange={e => setRulesText(e.target.value)} placeholder={"# CHAT RULES\nDon't spam in chat (30 minutes timeout)\nNo advertising\n# GENERAL RULES\nBe respectful"}/>
