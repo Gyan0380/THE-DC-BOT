@@ -26,7 +26,7 @@ async function validateApiKey(provider, apiKey) {
   try {
     let response;
     if (provider === "gemini") {
-      response = await requestWithTimeout("https://generativelanguage.googleapis.com/v1beta/models?key=" + encodeURIComponent(apiKey), { method: "GET" });
+      response = await requestWithTimeout("https://generativelanguage.googleapis.com/v1beta/models", { method: "GET", headers: { "x-goog-api-key": apiKey } });
     } else {
       response = await requestWithTimeout("https://api.deepseek.com/models", { method: "GET", headers: { Authorization: "Bearer " + apiKey } });
     }
@@ -45,10 +45,10 @@ async function callAi(settings, messages, maxTokens = 500) {
   const apiKey = decryptApiKey(cfg.encryptedKey);
   let response;
   if (cfg.provider === "gemini") {
-    const url = "https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(cfg.model) + ":generateContent?key=" + encodeURIComponent(apiKey);
+    const url = "https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(cfg.model) + ":generateContent";
     const prompt = messages.map(m => (m.role === "system" ? "SYSTEM INSTRUCTIONS:\n" : "USER INPUT:\n") + m.content).join("\n\n");
     response = await requestWithTimeout(url, {
-      method: "POST", headers: { "Content-Type": "application/json" },
+      method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
       body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: prompt }] }], generationConfig: { temperature: 0, maxOutputTokens: maxTokens, responseMimeType: "application/json" } })
     }, 18000);
     const data = await response.json().catch(() => ({}));
@@ -67,7 +67,7 @@ async function callAi(settings, messages, maxTokens = 500) {
 
 async function classifyMessage(settings, message, rules) {
   const usableRules = (Array.isArray(rules) ? rules : []).map((rule, index) => ({
-    id: typeof rule === "string" ? (String(index + 1)) : String(rule.id || index + 1),
+    id: typeof rule === "string" ? ((rule.match(/^\\s*(\\d+(?:\\.\\d+)?)/)?.[1]) || String(index + 1)) : String(rule.id || index + 1),
     text: typeof rule === "string" ? rule : String(rule.text || rule.description || rule.title || "")
   })).filter(rule => rule.text.trim());
   if (!usableRules.length) return { status: "clear", reason: "No server rules configured." };
