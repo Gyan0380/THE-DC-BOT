@@ -196,13 +196,15 @@ export default function Home() {
               <button className="secondary" type="button" onClick={() => setRulesText(v => (v ? v + "\n" : "") + "# CHAT RULES\nDon't spam in chat")}>+ Chat rules</button>
               <button className="secondary" type="button" onClick={() => setRulesText(v => (v ? v + "\n" : "") + "# GENERAL RULES\nBe respectful to everyone")}>+ General rules</button>
               <button className="secondary" type="button" onClick={() => setRulesText(v => (v ? v + "\n" : "") + "# VOICE CHAT RULES\nNo mic spam")}>+ Voice rules</button>
-              <button className="secondary" type="button" onClick={() => setRulesText(v => (v ? v + "\n" : "") + "Don't spam in chat (30 minutes timeout)")}>+ Spam rule</button>
+              <button className="secondary" type="button" onClick={() => setRulesText(v => (v ? v + "\n" : "") + "Don't spam in chat (30 minutes timeout) (2 points)")}>+ Spam rule · timeout + points</button>
+              <button className="secondary" type="button" onClick={() => setRulesText(v => (v ? v + "\\n" : "") + "Be respectful to members (1 point)")}>+ Rule · 1 point</button>
+              <button className="secondary" type="button" onClick={() => setRulesText(v => (v ? v + "\\n" : "") + "No advertising (3 points)")}>+ Rule · 3 points</button>
             </div>
             <label className="fieldLabel">Rules editor (one rule or # heading per line)</label>
             <textarea rows={10} value={rulesText} onChange={e => setRulesText(e.target.value)} placeholder={"# CHAT RULES\nDon't spam in chat (30 minutes timeout)\nNo advertising\n# GENERAL RULES\nBe respectful"}/>
             <div className="sectionDivider"></div>
             <h3>Spam detection customisation</h3>
-            <p className="hint">These settings control the built-in spam detector. Timeout duration is read from the matching spam rule above.</p>
+            <p className="hint">These settings control the built-in spam detector. Timeout duration and points are read from the matching spam rule above. Points are logged per moderation event; automatic strike totals are not implemented.</p>
             <div className="moduleGrid">
               <div><label className="fieldLabel">Messages in burst</label><input type="number" min="2" max="30" value={settings.spamDetection?.messages ?? 5} onChange={e => setSettings(p => ({...p,spamDetection:{...p.spamDetection,messages:Number(e.target.value)}}))}/></div>
               <div><label className="fieldLabel">Burst window (seconds)</label><input type="number" min="1" max="60" value={settings.spamDetection?.windowSeconds ?? 6} onChange={e => setSettings(p => ({...p,spamDetection:{...p.spamDetection,windowSeconds:Number(e.target.value)}}))}/></div>
