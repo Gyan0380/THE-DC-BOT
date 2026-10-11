@@ -1,25 +1,47 @@
-const { MongoClient } = require("mongodb");
-let client;
+const { initializeApp, cert, getApps } = require("firebase-admin/app");
+const { getFirestore } = require("firebase-admin/firestore");
+
 let database;
+
+function parseServiceAccount() {
+  const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+  if (!raw) {
+    throw new Error("FIREBASE_SERVICE_ACCOUNT_JSON is missing. Add your Firebase service-account JSON as a Railway variable.");
+  }
+  try {
+    const account = JSON.parse(raw);
+    if (!account.project_id || !account.client_email || !account.private_key) {
+      throw new Error("service account JSON is missing project_id, client_email, or private_key");
+    }
+    account.private_key = account.private_key.replace(/\\n/g, "\n");
+    return account;
+  } catch (error) {
+    throw new Error("FIREBASE_SERVICE_ACCOUNT_JSON must contain valid service-account JSON: " + error.message);
+  }
+}
 
 async function connectDb() {
   if (database) return database;
-  if (!process.env.MONGODB_URI) throw new Error("MONGODB_URI is missing");
-  client = new MongoClient(process.env.MONGODB_URI);
-  await client.connect();
-  database = client.db(process.env.MONGODB_DB || "the_dc_bot");
-  await database.collection("giveaways").createIndex({ endsAt: 1 });
-  await database.collection("modlogs").createIndex({ guildId: 1, userId: 1, createdAt: -1 });
-  await database.collection("settings").createIndex({ guildId: 1 }, { unique: true });
+  const serviceAccount = parseServiceAccount();
+  const appName = "the-dc-bot";
+  const existing = getApps().find(app => app.name === appName);
+  const app = existing || initializeApp({ credential: cert(serviceAccount), projectId: serviceAccount.project_id }, appName);
+  database = getFirestore(app);
+  await database.collection("_health").doc("connection").set({
+    service: "the-dc-bot",
+    checkedAt: new Date().toISOString()
+  }, { merge: true });
+  console.log("Connected to Firebase Cloud Firestore project:", serviceAccount.project_id);
   return database;
 }
+
 function getDb() {
-  if (!database) throw new Error("Database not connected");
+  if (!database) throw new Error("Firebase Firestore is not connected");
   return database;
 }
+
 async function closeDb() {
-  if (client) await client.close();
-  client = undefined;
   database = undefined;
 }
+
 module.exports = { connectDb, getDb, closeDb };
