@@ -6,31 +6,11 @@ const commands = [
   new SlashCommandBuilder().setName("rules-set").setDescription("Set server rules, one per line")
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .addStringOption(o => o.setName("rules").setDescription("Write each rule on a new line").setRequired(true).setMaxLength(4000)),
-  new SlashCommandBuilder().setName("welcome-setup").setDescription("Set the welcome channel and message")
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
-    .addChannelOption(o => o.setName("channel").setDescription("Channel for new-member messages").setRequired(true).addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement))
-    .addStringOption(o => o.setName("message").setDescription("Use {user} and {server}").setMaxLength(1900)),
-  new SlashCommandBuilder().setName("goodbye-setup").setDescription("Set the goodbye channel and message")
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
-    .addChannelOption(o => o.setName("channel").setDescription("Channel for member-leave messages").setRequired(true).addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement))
-    .addStringOption(o => o.setName("message").setDescription("Use {user} and {server}").setMaxLength(1900)),
-  new SlashCommandBuilder().setName("timeout").setDescription("Timeout a member")
-    .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers)
-    .addUserOption(o => o.setName("user").setDescription("Member to timeout").setRequired(true))
-    .addIntegerOption(o => o.setName("minutes").setDescription("Duration in minutes (1-40320)").setRequired(true).setMinValue(1).setMaxValue(40320))
-    .addStringOption(o => o.setName("reason").setDescription("Reason for timeout").setMaxLength(500)),
-  new SlashCommandBuilder().setName("untimeout").setDescription("Remove a member timeout")
-    .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers)
-    .addUserOption(o => o.setName("user").setDescription("Member to untimeout").setRequired(true))
-    .addStringOption(o => o.setName("reason").setDescription("Reason").setMaxLength(500)),
-  new SlashCommandBuilder().setName("kick").setDescription("Kick a member")
-    .setDefaultMemberPermissions(PermissionFlagsBits.KickMembers)
-    .addUserOption(o => o.setName("user").setDescription("Member to kick").setRequired(true))
-    .addStringOption(o => o.setName("reason").setDescription("Reason").setMaxLength(500)),
-  new SlashCommandBuilder().setName("ban").setDescription("Ban a member")
-    .setDefaultMemberPermissions(PermissionFlagsBits.BanMembers)
-    .addUserOption(o => o.setName("user").setDescription("Member to ban").setRequired(true))
-    .addStringOption(o => o.setName("reason").setDescription("Reason").setMaxLength(500)),
+  new SlashCommandBuilder().setName("welcome-config").setDescription("Open the Welcome & Goodbye setup panel")
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+  new SlashCommandBuilder().setName("punish").setDescription("Open the moderation control panel")
+    .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers),
+  new SlashCommandBuilder().setName("dashboard").setDescription("Get the THE DC BOT web dashboard link"),
   new SlashCommandBuilder().setName("clear").setDescription("Delete recent messages from this channel")
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
     .addIntegerOption(o => o.setName("amount").setDescription("Number of messages (1-100)").setRequired(true).setMinValue(1).setMaxValue(100)),
