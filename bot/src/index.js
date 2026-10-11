@@ -62,7 +62,25 @@ client.on(Events.MessageCreate, async message => {
     const settings = await getGuildSettings(message.guildId);
     if (settings.automod?.enabled === false) return;
     const finding = inspectMessage(message);
-    if (finding.status === "review") await saveReview(client, message, finding);
+    if (finding.status === "review") {
+      await saveReview(client, message, finding);
+      const autoMinutes = Number(settings.automod?.autoTimeoutMinutes || 0);
+      if (autoMinutes > 0 && autoMinutes <= 40320) {
+        const member = message.member || await message.guild.members.fetch(message.author.id).catch(() => null);
+        if (member?.moderatable && !member.permissions.has(PermissionFlagsBits.Administrator)) {
+          const ruleText = Array.isArray(settings.rules) ? settings.rules[Number.parseInt(String(finding.ruleId), 10) - 1] : null;
+          const ruleName = typeof ruleText === "string" ? ruleText : ("Rule " + finding.ruleId);
+          const reason = "Automated rule signal: " + ruleName + " — " + finding.reason;
+          await member.timeout(autoMinutes * 60000, reason);
+          const dmSent = await dmMember(member.user, message.guild, client.user, "Automatic timeout", "The bot detected a possible violation of **" + ruleName + "**.\nDetails: " + finding.reason, autoMinutes + " minutes");
+          await logAction(message.guildId, { action: "auto_timeout", userId: member.id, username: member.user.tag, moderatorId: client.user.id, moderatorName: client.user.tag, reason, ruleId: finding.ruleId, durationMinutes: autoMinutes, dmSent, status: "completed" });
+        } else {
+          await dmMember(message.author, message.guild, client.user, "Rule review notice", "A message was flagged for moderator review under Rule " + finding.ruleId + ": " + finding.reason + ". No timeout was applied.", null);
+        }
+      } else {
+        await dmMember(message.author, message.guild, client.user, "Rule review notice", "A message was flagged for moderator review under Rule " + finding.ruleId + ": " + finding.reason + ". No automatic punishment was applied.", null);
+      }
+    }
   } catch (error) {
     console.error("Message review failed:", error);
   }
