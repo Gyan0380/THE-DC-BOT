@@ -38,11 +38,12 @@ const commands = [
     .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers)
 ];
 
-async function main() {
+async function registerCommands() {
   const { DISCORD_TOKEN, DISCORD_CLIENT_ID, DISCORD_GUILD_ID } = process.env;
   if (!DISCORD_TOKEN || !DISCORD_CLIENT_ID || !DISCORD_GUILD_ID) throw new Error("Set DISCORD_TOKEN, DISCORD_CLIENT_ID, and DISCORD_GUILD_ID");
   const rest = new REST({ version: "10" }).setToken(DISCORD_TOKEN);
   await rest.put(Routes.applicationGuildCommands(DISCORD_CLIENT_ID, DISCORD_GUILD_ID), { body: commands.map(c => c.toJSON()) });
   console.log("Registered " + commands.length + " guild slash commands.");
 }
-main().catch(error => { console.error(error); process.exitCode = 1; });
+if (require.main === module) registerCommands().catch(error => { console.error(error); process.exitCode = 1; });
+module.exports = { commands, registerCommands };
