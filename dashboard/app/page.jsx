@@ -118,7 +118,7 @@ export default function Home() {
   async function save() {
     if (!canSave) return;
     setBusy(true); setNotice(""); setError("");
-    const next = { ...settings, rules: rulesText.split("\n").map(s => s.trim()).filter(Boolean) };
+    const next = { ...settings, rules: rulesText.split("\n").map(s => s.trim()).filter(Boolean), rulePolicies };
     try {
       const r = await fetch("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ guildId, settings: next }) });
       const d = await r.json();
@@ -194,73 +194,103 @@ export default function Home() {
             {channelError && <p className="hint">Channel list: {channelError} You can also configure channels with /welcome-setup and /goodbye-setup in Discord.</p>}
           </>}
           {active === "Rules" && <>
-            <h3>Rule library</h3>
-            <p className="hint">Search a category such as #LINKS. Add several rules; each rule has its own points, timeout, and channel settings.</p>
-            <label className="fieldLabel">Search categories and rules</label>
-            <input value={ruleSearch} onChange={e => setRuleSearch(e.target.value)} placeholder="Try #LINKS, #ADVERTISEMENT, #SPAM..." />
+            <h3>Rule categories & library</h3>
+            <p className="hint">Categories are numbered automatically (1, 2, 3...). Rules inside them use 1.1, 1.2, 2.1 numbering. Select a hashtag category, then add one or more rules. Every rule stores its own thresholds, timeout and channel scope.</p>
+            <label className="fieldLabel">Search hashtag library</label>
+            <input value={ruleSearch} onChange={e => setRuleSearch(e.target.value)} placeholder="Search #LINKS, #SPAM, #GENERAL..." />
             <div className="moduleGrid" style={{marginTop:12}}>
               {[
-                {tag:"#ADVERTISEMENT",title:"No advertising",desc:"Promotional messages and invite links",points:3,timeout:30},
-                {tag:"#SPAM",title:"Don't spam in chat",desc:"Rapid or repeated messages",points:2,timeout:30},
-                {tag:"#HARASSMENT",title:"No harassment or insults",desc:"Respectful conversations",points:2,timeout:10},
-                {tag:"#LINKS",title:"No unauthorized links",desc:"Restrict links in selected channels",points:1,timeout:0},
-                {tag:"#VOICE",title:"No voice/mic spam",desc:"Voice chat conduct",points:1,timeout:0},
-                {tag:"#GENERAL",title:"Be respectful to members",desc:"General community conduct",points:1,timeout:0},
-                {tag:"#SCAM",title:"No scams or fake giveaways",desc:"Misleading offers and scams",points:3,timeout:60},
-                {tag:"#CAPS",title:"Avoid excessive caps",desc:"Excessive all-caps messages",points:1,timeout:0},
-              ].filter(item => !ruleSearch || (item.tag+" "+item.title+" "+item.desc).toLowerCase().includes(ruleSearch.replace(/^#/,"").toLowerCase())).map(item => <div className="module" key={item.tag}>
+                {tag:"#LINKS", title:"Link Spam", desc:"Limit link messages in a time window", kind:"links", points:1, timeout:0, limit:1, window:4},
+                {tag:"#LINKS", title:"Unauthorized Links", desc:"Block links in selected channels", kind:"links", points:1, timeout:5, limit:1, window:4},
+                {tag:"#LINKS", title:"Suspicious Links", desc:"Review suspicious URLs", kind:"links", points:2, timeout:10, limit:1, window:10},
+                {tag:"#SPAM", title:"Rapid Messages", desc:"Too many messages in a short time", kind:"spam", points:2, timeout:10, limit:5, window:6},
+                {tag:"#SPAM", title:"Repeated Messages", desc:"Same message sent repeatedly", kind:"spam", points:2, timeout:10, limit:4, window:15},
+                {tag:"#ADVERTISEMENT", title:"Unauthorized Advertising", desc:"Promotional content outside allowed channels", kind:"advertising", points:3, timeout:30, limit:1, window:60},
+                {tag:"#HARASSMENT", title:"Harassment or Insults", desc:"Send for moderator review", kind:"review", points:2, timeout:0, limit:1, window:60},
+                {tag:"#SCAM", title:"Scams or Fake Giveaways", desc:"Send suspicious cases for review", kind:"review", points:3, timeout:30, limit:1, window:60},
+                {tag:"#CAPS", title:"Excessive Caps", desc:"All-caps messages", kind:"caps", points:1, timeout:0, limit:1, window:60},
+                {tag:"#VOICE", title:"Voice Chat Conduct", desc:"Voice rules are configured separately from text checks", kind:"voice", points:1, timeout:0, limit:1, window:60},
+                {tag:"#GENERAL", title:"Respect Members", desc:"General community rule", kind:"review", points:1, timeout:0, limit:1, window:60},
+                {tag:"#GENERAL", title:"Follow Server Rules", desc:"General community rule", kind:"review", points:1, timeout:0, limit:1, window:60}
+              ].filter(item => !ruleSearch || (item.tag+" "+item.title+" "+item.desc).toLowerCase().includes(ruleSearch.replace(/^#/,"").toLowerCase())).map(item => <div className="module" key={item.tag+item.title}>
                 <span>{item.tag}</span><b>{item.title}</b><small className="muted">{item.desc}</small>
                 <button className="secondary" type="button" onClick={() => {
                   setRulesText(v => {
                     const lines = v.split("\n").map(x => x.trim()).filter(Boolean);
-                    const exists = lines.some(x => x.replace(/\s*\((?:\d+)\s+(?:points?|minutes? timeout)\)/gi,"").trim() === item.title);
+                    const exists = lines.some(x => !x.startsWith("#") && x.replace(/\s*\(\d+\s+(?:points?|minutes? timeout)\)/gi,"").trim() === item.title);
                     if (exists) return v;
-                    const category = item.tag;
-                    if (!lines.includes(category)) lines.push(category);
+                    if (!lines.includes(item.tag)) lines.push(item.tag);
                     lines.push(item.title+" ("+item.timeout+" minutes timeout) ("+item.points+" points)");
                     return lines.join("\n");
                   });
-                  setRulePolicies(p => ({...p,[item.title]:p[item.title]||{allChannels:true,channelIds:[],excludedChannelIds:[]}}));
+                  setRulePolicies(p => ({...p,[item.title]:p[item.title]||{category:item.tag,kind:item.kind,allChannels:true,channelIds:[],excludedChannelIds:[],limit:item.limit,windowSeconds:item.window}}));
                 }}>+ Add rule</button>
               </div>)}
             </div>
             <div className="sectionDivider"></div>
-            <h3>Selected rules & settings</h3>
-            <p className="hint">Category headings (for example #LINKS) are labels only. Each rule below can have its own channels, points and timeout.</p>
-            {rulesText.split("\n").map(line => line.trim()).filter(line => line && !line.startsWith("#")).map((line,i) => {
-              const title = line.replace(/\s*\(\d+\s+(?:points?|minutes? timeout)\)/gi,"").trim();
-              const pointValue = (line.match(/\((\d+)\s+points?\)/i)||[])[1] ?? "0";
-              const timeoutValue = (line.match(/\((\d+)\s+minutes? timeout\)/i)||[])[1] ?? "0";
-              const policy = rulePolicies[title] || {allChannels:true,channelIds:[],excludedChannelIds:[]};
-              const updateSetting = (kind, raw) => {
-                setRulesText(v => v.split("\n").map(x => {
-                  if (x.trim() !== line) return x;
-                  const clean = x.replace(/\s*\(\d+\s+(?:points?|minutes? timeout)\)/gi,"").trim();
-                  const pts = kind === "points" ? raw : ((x.match(/\((\d+)\s+points?\)/i)||[])[1] ?? "0");
-                  const mins = kind === "timeout" ? raw : ((x.match(/\((\d+)\s+minutes? timeout\)/i)||[])[1] ?? "0");
-                  return clean+" ("+mins+" minutes timeout) ("+pts+" points)";
-                }).join("\n"));
-              };
-              return <div className="panel" key={title+"-"+i}>
-                <div className="panelHeading"><div><b>{title}</b><p className="hint">{line}</p></div><button className="secondary" type="button" onClick={() => {
-                  setRulesText(v => v.split("\n").filter(x => x.trim() !== line).join("\n"));
-                  setRulePolicies(p => {const n={...p};delete n[title];return n;});
-                }}>Remove</button></div>
-                <label className="toggle"><span><b>Apply in all channels</b><small>Turn off to choose specific channels.</small></span><input type="checkbox" checked={Boolean(policy.allChannels)} onChange={e=>setRulePolicies(p=>({...p,[title]:{...policy,allChannels:e.target.checked}}))}/></label>
-                {!policy.allChannels && <div className="moduleGrid" style={{marginTop:12}}>
-                  {channels.map(ch => <label className="toggle" key={ch.id}><span><b>#{ch.name}</b></span><input type="checkbox" checked={(policy.channelIds||[]).includes(ch.id)} onChange={e=>setRulePolicies(p=>({...p,[title]:{...policy,channelIds:e.target.checked?[...(policy.channelIds||[]),ch.id]:(policy.channelIds||[]).filter(id=>id!==ch.id)}}))}/></label>)}
-                  {channels.length===0 && <p className="hint">No text channels loaded. Check the bot's channel-list permissions.</p>}
-                </div>}
-                <div className="moduleGrid" style={{marginTop:12}}>
-                  <div><label className="fieldLabel">Points</label><input type="text" inputMode="numeric" value={pointValue} onChange={e=>updateSetting("points",e.target.value.replace(/\D/g,""))}/></div>
-                  <div><label className="fieldLabel">Timeout (minutes, 0 = none)</label><input type="text" inputMode="numeric" value={timeoutValue} onChange={e=>updateSetting("timeout",e.target.value.replace(/\D/g,""))}/></div>
-                </div>
-              </div>;
-            })}
-            <label className="fieldLabel">Rules / headings editor (optional)</label>
-            <textarea rows={6} value={rulesText} onChange={e=>setRulesText(e.target.value)} placeholder={"#LINKS\nNo unauthorized links (0 minutes timeout) (1 points)"}/>
+            <h3>Selected categories & rules</h3>
+            <p className="hint">Category tags are headings, not moderation rules. Remove a rule using its own Remove button. Settings are kept per rule.</p>
+            {(() => {
+              const lines = rulesText.split("\n").map(line => line.trim()).filter(Boolean);
+              const groups = [];
+              let current = null;
+              for (const line of lines) {
+                if (line.startsWith("#")) {
+                  current = {tag:line.toUpperCase(), rules:[]};
+                  groups.push(current);
+                } else {
+                  if (!current) { current = {tag:"#GENERAL",rules:[]}; groups.push(current); }
+                  current.rules.push(line);
+                }
+              }
+              let categoryNumber = 0;
+              return groups.map(group => {
+                categoryNumber += 1;
+                const groupNumber = categoryNumber;
+                return <div className="panel" key={group.tag+"-"+groupNumber}>
+                  <div className="panelHeading"><div><b>{groupNumber}. {group.tag}</b><p className="hint">{group.rules.length} rule(s)</p></div><button className="secondary" type="button" onClick={() => setRulesText(v => v.split("\n").filter(x => x.trim().toUpperCase() !== group.tag).join("\n"))}>Remove category</button></div>
+                  {group.rules.map((line, index) => {
+                    const title = line.replace(/\s*\(\d+\s+(?:points?|minutes? timeout)\)/gi,"").trim();
+                    const pointValue = (line.match(/\((\d+)\s+points?\)/i)||[])[1] ?? "0";
+                    const timeoutValue = (line.match(/\((\d+)\s+minutes? timeout\)/i)||[])[1] ?? "0";
+                    const policy = rulePolicies[title] || {category:group.tag,kind:/spam|rapid|repeated/i.test(title)?"spam":/link|url/i.test(title)?"links":"review",allChannels:true,channelIds:[],excludedChannelIds:[],limit:5,windowSeconds:6};
+                    const updateSetting = (kind, raw) => {
+                      setRulesText(v => v.split("\n").map(x => {
+                        if (x.trim() !== line) return x;
+                        const clean = x.replace(/\s*\(\d+\s+(?:points?|minutes? timeout)\)/gi,"").trim();
+                        const pts = kind === "points" ? raw : ((x.match(/\((\d+)\s+points?\)/i)||[])[1] ?? "0");
+                        const mins = kind === "timeout" ? raw : ((x.match(/\((\d+)\s+minutes? timeout\)/i)||[])[1] ?? "0");
+                        return clean+" ("+mins+" minutes timeout) ("+pts+" points)";
+                      }).join("\n"));
+                    };
+                    return <div className="panel" key={title+"-"+groupNumber+"-"+index}>
+                      <div className="panelHeading"><div><b>{groupNumber}.{index+1} {title}</b><p className="hint">{group.tag} · {line}</p></div><button className="secondary" type="button" onClick={() => {setRulesText(v=>v.split("\n").filter(x=>x.trim()!==line).join("\n"));setRulePolicies(p=>{const n={...p};delete n[title];return n;});}}>Remove rule</button></div>
+                      <label className="fieldLabel">Rule type</label>
+                      <select value={policy.kind||"review"} onChange={e=>setRulePolicies(p=>({...p,[title]:{...policy,kind:e.target.value}}))}>
+                        <option value="links">Links</option><option value="spam">Spam / message flood</option><option value="advertising">Advertising</option><option value="caps">Excessive caps</option><option value="review">Moderator review</option><option value="voice">Voice chat</option>
+                      </select>
+                      <label className="toggle"><span><b>Apply in all channels</b><small>Turn off to choose exactly where this rule applies.</small></span><input type="checkbox" checked={Boolean(policy.allChannels)} onChange={e=>setRulePolicies(p=>({...p,[title]:{...policy,allChannels:e.target.checked}}))}/></label>
+                      {!policy.allChannels && <div className="moduleGrid" style={{marginTop:12}}>
+                        {channels.map(ch => <label className="toggle" key={ch.id}><span><b>#{ch.name}</b></span><input type="checkbox" checked={(policy.channelIds||[]).includes(ch.id)} onChange={e=>setRulePolicies(p=>({...p,[title]:{...policy,channelIds:e.target.checked?[...(policy.channelIds||[]),ch.id]:(policy.channelIds||[]).filter(id=>id!==ch.id)}}))}/></label>)}
+                        {channels.length===0 && <p className="hint">No channels loaded. Check bot permissions.</p>}
+                      </div>}
+                      <div className="moduleGrid" style={{marginTop:12}}>
+                        <div><label className="fieldLabel">Points (label/metadata)</label><input type="text" inputMode="numeric" value={pointValue} onChange={e=>updateSetting("points",e.target.value.replace(/\D/g,""))}/></div>
+                        <div><label className="fieldLabel">Timeout (minutes, 0 = none)</label><input type="text" inputMode="numeric" value={timeoutValue} onChange={e=>updateSetting("timeout",e.target.value.replace(/\D/g,""))}/></div>
+                        <div><label className="fieldLabel">Allowed matches</label><input type="number" min="1" max="100" value={policy.limit ?? 1} onChange={e=>setRulePolicies(p=>({...p,[title]:{...policy,limit:Math.max(1,Math.min(100,Number(e.target.value)||1))}}))}/></div>
+                        <div><label className="fieldLabel">Time window (seconds)</label><input type="number" min="1" max="3600" value={policy.windowSeconds ?? 4} onChange={e=>setRulePolicies(p=>({...p,[title]:{...policy,windowSeconds:Math.max(1,Math.min(3600,Number(e.target.value)||1))}}))}/></div>
+                      </div>
+                    </div>;
+                  })}
+                  <button className="secondary" type="button" onClick={() => {const title=window.prompt("New rule name for "+group.tag+":");if(!title||!title.trim())return;const clean=title.trim();setRulesText(v=>v.split("\n").some(x=>x.replace(/\s*\(\d+\s+(?:points?|minutes? timeout)\)/gi,"").trim()===clean)?v:(v+"\n"+clean+" (0 minutes timeout) (1 points)").trim());setRulePolicies(p=>({...p,[clean]:p[clean]||{category:group.tag,kind:"review",allChannels:true,channelIds:[],excludedChannelIds:[],limit:1,windowSeconds:4}}));}}>+ Add custom rule to {group.tag}</button>
+                </div>;
+              });
+            })()}
+            <label className="fieldLabel">Rules text (advanced editor)</label>
+            <textarea rows={5} value={rulesText} onChange={e=>setRulesText(e.target.value)} placeholder={"#LINKS\nLink Spam (0 minutes timeout) (1 points)"} />
             <div className="sectionDivider"></div>
-            <h3>Spam detection thresholds</h3>
+            <h3>Default spam detection thresholds</h3>
+            <p className="hint">These are global fallbacks. A specific rule's threshold settings above should be used by a matching live detector once supported in the bot.</p>
             <div className="moduleGrid">
               <div><label className="fieldLabel">Messages in burst</label><input type="number" min="2" max="30" value={settings.spamDetection?.messages ?? 5} onChange={e=>setSettings(p=>({...p,spamDetection:{...p.spamDetection,messages:Number(e.target.value)}}))}/></div>
               <div><label className="fieldLabel">Burst window (seconds)</label><input type="number" min="1" max="60" value={settings.spamDetection?.windowSeconds ?? 6} onChange={e=>setSettings(p=>({...p,spamDetection:{...p.spamDetection,windowSeconds:Number(e.target.value)}}))}/></div>
