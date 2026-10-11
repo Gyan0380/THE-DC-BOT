@@ -203,8 +203,16 @@ export default function Home() {
                 {tag:"#LINKS", title:"Link Spam", desc:"Limit link messages in a time window", kind:"links", points:1, timeout:0, limit:1, window:4},
                 {tag:"#LINKS", title:"Unauthorized Links", desc:"Block links in selected channels", kind:"links", points:1, timeout:5, limit:1, window:4},
                 {tag:"#LINKS", title:"Suspicious Links", desc:"Review suspicious URLs", kind:"links", points:2, timeout:10, limit:1, window:10},
-                {tag:"#SPAM", title:"Rapid Messages", desc:"Too many messages in a short time", kind:"spam", points:2, timeout:10, limit:5, window:6},
-                {tag:"#SPAM", title:"Repeated Messages", desc:"Same message sent repeatedly", kind:"spam", points:2, timeout:10, limit:4, window:15},
+                {tag:"#SPAM", title:"Rapid Message Spam", desc:"Too many messages inside a short time window", kind:"rapid_spam", points:2, timeout:10, limit:5, window:6},
+                {tag:"#SPAM", title:"Repeated Message Spam", desc:"Same or nearly identical message repeated", kind:"repeat_spam", points:2, timeout:10, limit:4, window:15},
+                {tag:"#SPAM", title:"Link Spam", desc:"Too many messages containing URLs", kind:"link_spam", points:2, timeout:5, limit:1, window:4},
+                {tag:"#SPAM", title:"Mention Spam", desc:"Too many user or role mentions", kind:"mention_spam", points:2, timeout:5, limit:4, window:10},
+                {tag:"#SPAM", title:"Emoji Spam", desc:"Excessive emoji in a message or burst", kind:"emoji_spam", points:1, timeout:0, limit:8, window:10},
+                {tag:"#SPAM", title:"Attachment Spam", desc:"Too many images or files in a short time", kind:"attachment_spam", points:2, timeout:5, limit:3, window:10},
+                {tag:"#SPAM", title:"Invite Link Spam", desc:"Repeated Discord invite links", kind:"invite_spam", points:2, timeout:10, limit:1, window:10},
+                {tag:"#SPAM", title:"Character Flood", desc:"Excessively repeated characters", kind:"character_flood", points:1, timeout:0, limit:1, window:4},
+                {tag:"#SPAM", title:"Mass Ping Spam", desc:"Mass mentions or everyone/here pings", kind:"mass_ping", points:3, timeout:30, limit:1, window:10},
+                {tag:"#SPAM", title:"Sticker Spam", desc:"Too many stickers in a short time", kind:"sticker_spam", points:1, timeout:0, limit:4, window:10},
                 {tag:"#ADVERTISEMENT", title:"Unauthorized Advertising", desc:"Promotional content outside allowed channels", kind:"advertising", points:3, timeout:30, limit:1, window:60},
                 {tag:"#HARASSMENT", title:"Harassment or Insults", desc:"Send for moderator review", kind:"review", points:2, timeout:0, limit:1, window:60},
                 {tag:"#SCAM", title:"Scams or Fake Giveaways", desc:"Send suspicious cases for review", kind:"review", points:3, timeout:30, limit:1, window:60},
@@ -247,7 +255,7 @@ export default function Home() {
               return groups.map(group => {
                 categoryNumber += 1;
                 const groupNumber = categoryNumber;
-                return <div className="panel" key={group.tag+"-"+groupNumber}>
+                return <details className="panel" key={group.tag+"-"+groupNumber} open={groupNumber === 1}><summary style={{cursor:"pointer",fontWeight:700,paddingBottom:12}}>{groupNumber}. {group.tag} · {group.rules.length} rule(s)</summary>
                   <div className="panelHeading"><div><b>{groupNumber}. {group.tag}</b><p className="hint">{group.rules.length} rule(s)</p></div><button className="secondary" type="button" onClick={() => setRulesText(v => v.split("\n").filter(x => x.trim().toUpperCase() !== group.tag).join("\n"))}>Remove category</button></div>
                   {group.rules.map((line, index) => {
                     const title = line.replace(/\s*\(\d+\s+(?:points?|minutes? timeout)\)/gi,"").trim();
@@ -267,7 +275,7 @@ export default function Home() {
                       <div className="panelHeading"><div><b>{groupNumber}.{index+1} {title}</b><p className="hint">{group.tag} · {line}</p></div><button className="secondary" type="button" onClick={() => {setRulesText(v=>v.split("\n").filter(x=>x.trim()!==line).join("\n"));setRulePolicies(p=>{const n={...p};delete n[title];return n;});}}>Remove rule</button></div>
                       <label className="fieldLabel">Rule type</label>
                       <select value={policy.kind||"review"} onChange={e=>setRulePolicies(p=>({...p,[title]:{...policy,kind:e.target.value}}))}>
-                        <option value="links">Links</option><option value="spam">Spam / message flood</option><option value="advertising">Advertising</option><option value="caps">Excessive caps</option><option value="review">Moderator review</option><option value="voice">Voice chat</option>
+                        <option value="links">Links / URL policy</option><option value="link_spam">Link spam</option><option value="invite_spam">Invite link spam</option><option value="rapid_spam">Rapid message spam</option><option value="repeat_spam">Repeated message spam</option><option value="mention_spam">Mention spam</option><option value="emoji_spam">Emoji spam</option><option value="attachment_spam">Attachment spam</option><option value="character_flood">Character flood</option><option value="mass_ping">Mass ping spam</option><option value="sticker_spam">Sticker spam</option><option value="advertising">Advertising</option><option value="caps">Excessive caps</option><option value="review">Moderator review</option><option value="voice">Voice chat</option>
                       </select>
                       <label className="toggle"><span><b>Apply in all channels</b><small>Turn off to choose exactly where this rule applies.</small></span><input type="checkbox" checked={Boolean(policy.allChannels)} onChange={e=>setRulePolicies(p=>({...p,[title]:{...policy,allChannels:e.target.checked}}))}/></label>
                       {!policy.allChannels && <div className="moduleGrid" style={{marginTop:12}}>
@@ -283,7 +291,7 @@ export default function Home() {
                     </div>;
                   })}
                   <button className="secondary" type="button" onClick={() => {const title=window.prompt("New rule name for "+group.tag+":");if(!title||!title.trim())return;const clean=title.trim();setRulesText(v=>v.split("\n").some(x=>x.replace(/\s*\(\d+\s+(?:points?|minutes? timeout)\)/gi,"").trim()===clean)?v:(v+"\n"+clean+" (0 minutes timeout) (1 points)").trim());setRulePolicies(p=>({...p,[clean]:p[clean]||{category:group.tag,kind:"review",allChannels:true,channelIds:[],excludedChannelIds:[],limit:1,windowSeconds:4}}));}}>+ Add custom rule to {group.tag}</button>
-                </div>;
+                </details>;
               });
             })()}
             <label className="fieldLabel">Rules text (advanced editor)</label>
