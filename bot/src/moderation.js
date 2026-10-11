@@ -11,7 +11,7 @@ function detectPromotionChannel(channel) {
     /promo|promotion|advertisement/.test(category);
 }
 
-function parseRuleAction(ruleText) {
+function parseRulePoints(ruleText, fallback = 2) {\n  const match = String(ruleText || "").match(/\\b(\\d{1,3})\\s*points?\\b/i);\n  return match ? Math.max(0, Math.min(100, Number(match[1]))) : fallback;\n}\n\nfunction parseRuleAction(ruleText) {
   const text = String(ruleText || "");
   // Accept formats such as "spam (30 minutes timeout)", "timeout for 30 minutes", or "30 min timeout".
   const match = text.match(/(?:\(|\b)(?:timeout\s*(?:for\s*)?)?(\d+)\s*(minutes?|mins?|hours?|hrs?|days?)\s*(?:timeout)?\)?/i)
@@ -58,7 +58,7 @@ function inspectMessage(message, rules = [], spamConfig = {}) {
       return {
         status: "review", ruleId: (typeof spamRule === "object" && spamRule.id) || "spam",
         ruleText,  reason: rapid ? "Spam: " + rapidCount + " messages within " + rapidWindowSeconds + " seconds" : "Spam: same message repeated " + repeatCount + " times within " + repeatWindowSeconds + " seconds",
-        points: 2, ...action
+        points: parseRulePoints(ruleText), ...action
       };
     }
   }
@@ -113,4 +113,4 @@ async function saveReview(client, message, finding) {
   return ref.id;
 }
 
-module.exports = { detectPromotionChannel, inspectMessage, saveReview, parseRuleAction };
+module.exports = { detectPromotionChannel, inspectMessage, saveReview, parseRuleAction, parseRulePoints };
