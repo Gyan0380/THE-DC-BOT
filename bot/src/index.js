@@ -5,7 +5,7 @@ const { registerCommands } = require("./deploy-commands");
 const { DEFAULT_RULES } = require("./default-rules");
 const { getGuildSettings, patchGuildSettings } = require("./guild-settings");
 const { inspectMessage, saveReview } = require("./moderation");
-const { PROVIDERS, getProviderConfig, validateApiKey, classifyMessage } = require("./ai-provider");
+const { PROVIDERS, getProviderConfig, validateApiKey, classifyMessage, shouldInspectWithAi } = require("./ai-provider");
 const { encryptApiKey, decryptApiKey } = require("./ai-key-vault");
 const { openWelcomePanel, openPunishPanel, handlePanelInteraction, dmMember, logAction, dashUrl } = require("./panels");
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require("discord.js");
@@ -65,6 +65,7 @@ client.on(Events.MessageCreate, async message => {
     if (settings.automod?.enabled === false) return;
     const aiConfig = getProviderConfig(settings);
     if (aiConfig?.enabled && Array.isArray(settings.rules) && settings.rules.length) {
+      if (!shouldInspectWithAi(message, settings.rules)) return;
       try {
         const finding = await classifyMessage(settings, message, settings.rules);
         if (finding.status === "review" || finding.status === "violation") {
