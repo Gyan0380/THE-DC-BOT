@@ -18,11 +18,17 @@ function has(interaction, permission) {
 }
 async function dmMember(user, guild, moderator, action, reason, duration) {
   const extra = duration ? "\nDuration: " + duration : "";
+  const actionLabel = action === "untimeout" ? "Timeout removed" : action === "timeout_expired" || action === "Timeout ended" ? "Timeout ended" : action === "auto_timeout" || action === "Automatic timeout" ? "Automatic timeout" : action.toUpperCase();
+  const description = action === "untimeout" ? "Your timeout has been removed in **" + guild.name + "**."
+    : action === "timeout_expired" || action === "Timeout ended" ? "Your timeout in **" + guild.name + "** has ended."
+    : action === "auto_timeout" || action === "Automatic timeout" ? "The bot applied an automatic timeout in **" + guild.name + "** after detecting a possible rule violation."
+    : action === "timeout" ? "You have been timed out in **" + guild.name + "**."
+    : "A moderation action was applied to you in **" + guild.name + "**.";
   const embed = new EmbedBuilder()
     .setTitle("Moderation notice")
-    .setDescription("A moderation action was applied to you in **" + guild.name + "**.")
+    .setDescription(description)
     .addFields(
-      { name: "Action", value: action, inline: true },
+      { name: "Action", value: actionLabel, inline: true },
       { name: "Moderator", value: moderator.tag || moderator.username, inline: true },
       { name: "Reason", value: (reason || "No reason provided").slice(0, 900) }
     )
