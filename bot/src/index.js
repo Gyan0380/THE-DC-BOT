@@ -65,7 +65,7 @@ client.on(Events.MessageCreate, async message => {
     if (settings.automod?.enabled === false) return;
 
     // Run configurable, server-specific rules before optional AI moderation.
-    const deterministicFinding = inspectMessage(message, settings.rules || []);
+    const deterministicFinding = inspectMessage(message, settings.rules || [], settings.spamDetection || {});
     if (deterministicFinding.status === "review") {
       let appliedAction = "warning";
       let durationMinutes = null;
@@ -150,7 +150,7 @@ client.on(Events.MessageCreate, async message => {
       }
       return;
     }
-    const finding = inspectMessage(message);
+    const finding = inspectMessage(message, [], settings.spamDetection || {});
     if (finding.status === "review") {
       await saveReview(client, message, finding);
       await dmMember(message.author, message.guild, client.user, "Rule review notice", "A message was flagged for moderator review under Rule " + finding.ruleId + ": " + finding.reason + ". No automatic punishment was applied.", null);
@@ -244,9 +244,13 @@ client.on(Events.InteractionCreate, async interaction => {
         rules = snapshot.docs.map(doc => doc.data());
       }
       if (!rules.length) rules = DEFAULT_RULES;
-      const list = rules.map((r, i) => {
-        if (typeof r === "string") return "**" + (i + 1) + ".** " + r;
-        return "**" + (r.id || i + 1) + " — " + (r.title || "Rule") + "**" + (r.points ? " (" + r.points + " points)" : "") + (r.description ? "\n" + r.description : "");
+      let ruleNumber = 0;
+      const list = rules.map((r) => {
+        const raw = typeof r === "string" ? r : (r.title || "") + (r.description ? ": " + r.description : "");
+        if (typeof raw === "string" && raw.trim().startsWith("#")) return "\n__" + raw.trim().replace(/^#+\s*/, "") + "__\n";
+        ruleNumber += 1;
+        if (typeof r === "string") return "**" + ruleNumber + ".** " + r;
+        return "**" + (r.id || ruleNumber) + " — " + (r.title || "Rule") + "**" + (r.points ? " (" + r.points + " points)" : "") + (r.description ? "\n" + r.description : "");
       }).join("\n\n");
       await interaction.reply({ content: list.slice(0, 1900), ephemeral: true });
       return;
