@@ -4,7 +4,7 @@ Discord community bot starter with Firebase Cloud Firestore persistence, configu
 
 ## Current status
 
-This is an evolving starter implementation, not a production-ready bot. Test in a private Discord server first. The dashboard now has Discord OAuth routes, signed server-side sessions, server-specific Firestore settings, and live Firebase/bot health reporting. Some controls are configuration-only until their corresponding bot handlers are implemented. Giveaway persistence helpers exist, but complete giveaway slash commands and winner selection are not yet wired into the bot.
+This is an evolving implementation; test in a private Discord server first. Welcome/goodbye handlers, rules configuration, slash-command moderation (timeout, untimeout, kick, ban, clear, modlogs), and dashboard moderation controls are implemented. Giveaway persistence helpers exist, but complete giveaway slash commands and winner selection are not yet wired into the bot.
 
 ## Structure
 
@@ -19,8 +19,9 @@ This is an evolving starter implementation, not a production-ready bot. Test in 
 2. In **Build → Firestore Database**, create a Cloud Firestore database.
 3. In **Project settings → Service accounts**, generate a private service-account key for server-side use.
 4. In Railway, add a variable named `FIREBASE_SERVICE_ACCOUNT_JSON`. Paste the entire service-account JSON file contents as the value. Keep the JSON private.
-5. Add `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, and `DISCORD_GUILD_ID` in Railway variables.
-6. Install dependencies in `bot/` using `npm install`, then run `npm run deploy-commands` once and start with `npm start`.
+5. Add `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, and `DISCORD_GUILD_ID` in Railway variables. The bot now registers guild slash commands on startup when the ID variables are present.
+6. Install dependencies in `bot/` using `npm install`, then start with `npm start`.
+7. In Discord Developer Portal → Bot, enable **Server Members Intent** so welcome/goodbye join/leave events can fire. Message Content Intent is also used by the existing message review module.
 
 For local testing, create `bot/.env` and set the same variables. The service-account JSON must be on one line if pasted into an environment-variable editor; escaped newline characters in `private_key` are handled by the code.
 
@@ -45,9 +46,10 @@ Deploy the `dashboard/` directory as the Vercel project root. Add these environm
 - `DISCORD_REDIRECT_URI` — exactly `https://YOUR-VERCEL-DOMAIN/api/auth/discord/callback`
 - `SESSION_SECRET` — a random secret with at least 32 characters
 - `FIREBASE_SERVICE_ACCOUNT_JSON` — the complete Firebase service-account JSON, stored only as a server-side environment variable
+- `DISCORD_TOKEN` — bot token, required by the dashboard's channel picker and moderation actions; never expose it to client code
 
 In the Discord Developer Portal, open your application → OAuth2 and add the exact same callback URL under **Redirects**. The URL in Discord and `DISCORD_REDIRECT_URI` must match exactly, including HTTPS, domain, path, and trailing slash choice. After changing environment variables, redeploy the Vercel project.
 
 The dashboard only lists servers where the signed-in Discord user owns the server or has Manage Server permission. Keep OAuth secrets and Firebase service-account JSON out of browser code and Git commits.
 
-The dashboard can save configuration to Firestore, but settings do not automatically activate bot behavior unless the relevant bot handler reads and enforces those settings. The health panel reports the bot online only when a recent Firestore heartbeat is present.
+The dashboard and slash commands share per-server `guildSettings` for welcome/goodbye and rules. In the dashboard, choose channels, customize messages, and save. The bot's moderation API uses Discord permissions and role hierarchy; the bot must be allowed to timeout/kick/ban members. The health panel reports the bot online only when a recent Firestore heartbeat is present.
