@@ -11,7 +11,12 @@ function detectPromotionChannel(channel) {
     /promo|promotion|advertisement/.test(category);
 }
 
-function parseRulePoints(ruleText, fallback = 2) {\n  const match = String(ruleText || "").match(/\\b(\\d{1,3})\\s*points?\\b/i);\n  return match ? Math.max(0, Math.min(100, Number(match[1]))) : fallback;\n}\n\nfunction parseRuleAction(ruleText) {
+function parseRulePoints(ruleText, fallback = 2) {
+  const match = String(ruleText || "").match(/\b(\d{1,3})\s*points?\b/i);
+  return match ? Math.max(0, Math.min(100, Number(match[1]))) : fallback;
+}
+
+function parseRuleAction(ruleText) {
   const text = String(ruleText || "");
   // Accept formats such as "spam (30 minutes timeout)", "timeout for 30 minutes", or "30 min timeout".
   const match = text.match(/(?:\(|\b)(?:timeout\s*(?:for\s*)?)?(\d+)\s*(minutes?|mins?|hours?|hrs?|days?)\s*(?:timeout)?\)?/i)
