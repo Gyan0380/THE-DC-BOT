@@ -6,7 +6,7 @@ const {
 const { getGuildSettings, patchGuildSettings } = require("./guild-settings");
 const { getDb } = require("./db");
 
-const dashUrl = process.env.DASHBOARD_URL || "https://thedcbot.vercel.app";
+const dashUrl = process.env.DASHBOARD_URL || "https://thedcbot.vercel.app/api/auth/discord";
 
 function textInput(id, label, style = TextInputStyle.Short, required = true, value = "") {
   const input = new TextInputBuilder().setCustomId(id).setLabel(label).setStyle(style).setRequired(required);
