@@ -83,8 +83,7 @@ client.on(Events.MessageCreate, async message => {
             const multiplier = unit.startsWith("day") ? 1440 : unit.startsWith("hour") ? 60 : 1;
             const minutes = Number(timeoutMatch[1]) * multiplier;
             const member = message.member || await message.guild.members.fetch(message.author.id).catch(() => null);
-            const isExempt = member?.permissions?.has(PermissionFlagsBits.Administrator) || member?.permissions?.has(PermissionFlagsBits.ManageGuild);
-            if (minutes > 0 && minutes <= 40320 && member?.moderatable && !isExempt) {
+            if (minutes > 0 && minutes <= 40320 && member?.moderatable) {
               const reason = "Configured rule " + finding.ruleId + ": " + finding.reason;
               await member.timeout(minutes * 60000, reason);
               const dmSent = await dmMember(member.user, message.guild, client.user, "Automatic timeout", "A configured server rule was matched: **" + String(finding.ruleId) + "**.\nReason: " + finding.reason, minutes + " minutes");
@@ -93,8 +92,16 @@ client.on(Events.MessageCreate, async message => {
           }
         }
       } catch (aiError) {
-        // Do not log provider response bodies or secrets; keep the failure safe and moderator-visible.
+        // Never log provider response bodies or secrets. Notify the recorded key owner sparingly for quota/auth failures.
         console.error("AI moderation unavailable:", aiError.message);
+        const aiSettings = settings.ai || {};
+        const quotaOrAuth = /HTTP (401|402|403|429)|quota|credit|resource exhausted/i.test(aiError.message || "");
+        const lastAlert = Date.parse(aiSettings.lastFailureAlertAt || "1970-01-01T00:00:00.000Z");
+        if (quotaOrAuth && aiSettings.keyOwnerId && Date.now() - lastAlert > 6 * 60 * 60 * 1000) {
+          await patchGuildSettings(message.guildId, { ai: { ...aiSettings, lastFailureAlertAt: new Date().toISOString() } }).catch(() => {});
+          const owner = await client.users.fetch(aiSettings.keyOwnerId).catch(() => null);
+          if (owner) await owner.send("THE DC BOT AI moderation in **" + message.guild.name + "** could not call its configured provider (" + aiError.message + "). Check the provider key, quota/billing and /diagnose. The key itself is never included in this alert.").catch(() => {});
+        }
       }
       return;
     }
