@@ -1,18 +1,18 @@
 {
   "name": "the-dc-bot",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "Discord moderation and community bot starter",
+  "description": "Discord community bot with Firebase Firestore persistence",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
     "deploy-commands": "node src/deploy-commands.js",
-    "check": "node --check src/index.js && node --check src/moderation.js && node --check src/giveaways.js"
+    "check": "node --check src/index.js && node --check src/db.js && node --check src/moderation.js && node --check src/giveaways.js && node --check src/deploy-commands.js"
   },
   "engines": { "node": ">=20" },
   "dependencies": {
     "discord.js": "^14.22.1",
     "dotenv": "^16.6.1",
-    "mongodb": "^6.19.0"
+    "firebase-admin": "^13.5.0"
   }
 }
