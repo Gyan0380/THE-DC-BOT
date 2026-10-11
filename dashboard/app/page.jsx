@@ -195,45 +195,70 @@ export default function Home() {
           </>}
           {active === "Rules" && <>
             <h3>Rule library</h3>
-            <p className="hint">Type # to search rule categories (Instagram-style). Choose a suggestion to add it, then configure which channels it applies to. Select multiple channels or use all channels.</p>
+            <p className="hint">Search a category such as #LINKS. Add several rules; each rule has its own points, timeout, and channel settings.</p>
             <label className="fieldLabel">Search categories and rules</label>
-            <input value={ruleSearch} onChange={e => setRuleSearch(e.target.value)} placeholder="Try #ADVERTISEMENT, #SPAM, #CHAT, #VOICE..." />
+            <input value={ruleSearch} onChange={e => setRuleSearch(e.target.value)} placeholder="Try #LINKS, #ADVERTISEMENT, #SPAM..." />
             <div className="moduleGrid" style={{marginTop:12}}>
               {[
-                {tag:"#ADVERTISEMENT",title:"No advertising",desc:"Block promotional messages and invite links",points:3,timeout:30},
-                {tag:"#SPAM",title:"Don't spam in chat",desc:"Detect rapid/repeated messages",points:2,timeout:30},
-                {tag:"#HARASSMENT",title:"No harassment or insults",desc:"Keep conversations respectful",points:2,timeout:10},
+                {tag:"#ADVERTISEMENT",title:"No advertising",desc:"Promotional messages and invite links",points:3,timeout:30},
+                {tag:"#SPAM",title:"Don't spam in chat",desc:"Rapid or repeated messages",points:2,timeout:30},
+                {tag:"#HARASSMENT",title:"No harassment or insults",desc:"Respectful conversations",points:2,timeout:10},
                 {tag:"#LINKS",title:"No unauthorized links",desc:"Restrict links in selected channels",points:1,timeout:0},
-                {tag:"#VOICE",title:"No voice/mic spam",desc:"Voice chat conduct rule",points:1,timeout:0},
+                {tag:"#VOICE",title:"No voice/mic spam",desc:"Voice chat conduct",points:1,timeout:0},
                 {tag:"#GENERAL",title:"Be respectful to members",desc:"General community conduct",points:1,timeout:0},
-                {tag:"#SCAM",title:"No scams or fake giveaways",desc:"Protect members from misleading offers",points:3,timeout:60},
-                {tag:"#CAPS",title:"Avoid excessive caps",desc:"Reduce all-caps message flooding",points:1,timeout:0},
-              ].filter(item => !ruleSearch || (item.tag+" "+item.title+" "+item.desc).toLowerCase().includes(ruleSearch.replace(/^#/,"").toLowerCase()) || item.tag.toLowerCase().includes(ruleSearch.toLowerCase())).map(item => <div className="module" key={item.tag}>
+                {tag:"#SCAM",title:"No scams or fake giveaways",desc:"Misleading offers and scams",points:3,timeout:60},
+                {tag:"#CAPS",title:"Avoid excessive caps",desc:"Excessive all-caps messages",points:1,timeout:0},
+              ].filter(item => !ruleSearch || (item.tag+" "+item.title+" "+item.desc).toLowerCase().includes(ruleSearch.replace(/^#/,"").toLowerCase())).map(item => <div className="module" key={item.tag}>
                 <span>{item.tag}</span><b>{item.title}</b><small className="muted">{item.desc}</small>
-                <button className="secondary" type="button" onClick={() => { setRulesText(v => v.split("\\n").includes(item.title+" ("+item.timeout+" minutes timeout) ("+item.points+" points)") ? v : (v ? v+"\\n" : "")+item.title+" ("+item.timeout+" minutes timeout) ("+item.points+" points)"); setRulePolicies(p => ({...p,[item.title]:p[item.title]||{allChannels:true,channelIds:[],excludedChannelIds:[]}})); }}>+ Add rule</button>
+                <button className="secondary" type="button" onClick={() => {
+                  setRulesText(v => {
+                    const lines = v.split("\n").map(x => x.trim()).filter(Boolean);
+                    const exists = lines.some(x => x.replace(/\s*\((?:\d+)\s+(?:points?|minutes? timeout)\)/gi,"").trim() === item.title);
+                    if (exists) return v;
+                    const category = item.tag;
+                    if (!lines.includes(category)) lines.push(category);
+                    lines.push(item.title+" ("+item.timeout+" minutes timeout) ("+item.points+" points)");
+                    return lines.join("\n");
+                  });
+                  setRulePolicies(p => ({...p,[item.title]:p[item.title]||{allChannels:true,channelIds:[],excludedChannelIds:[]}}));
+                }}>+ Add rule</button>
               </div>)}
             </div>
             <div className="sectionDivider"></div>
-            <h3>Selected rules & channel settings</h3>
-            <p className="hint">Choose the channels where each rule is active. If “All channels” is selected, exclusions are respected. Channel-specific automatic enforcement depends on the bot handler supporting that rule type.</p>
+            <h3>Selected rules & settings</h3>
+            <p className="hint">Category headings (for example #LINKS) are labels only. Each rule below can have its own channels, points and timeout.</p>
             {rulesText.split("\n").map(line => line.trim()).filter(line => line && !line.startsWith("#")).map((line,i) => {
-              const title = line.replace(/ \([^)]*\)$/,"");
+              const title = line.replace(/\s*\(\d+\s+(?:points?|minutes? timeout)\)/gi,"").trim();
+              const pointValue = (line.match(/\((\d+)\s+points?\)/i)||[])[1] ?? "0";
+              const timeoutValue = (line.match(/\((\d+)\s+minutes? timeout\)/i)||[])[1] ?? "0";
               const policy = rulePolicies[title] || {allChannels:true,channelIds:[],excludedChannelIds:[]};
+              const updateSetting = (kind, raw) => {
+                setRulesText(v => v.split("\n").map(x => {
+                  if (x.trim() !== line) return x;
+                  const clean = x.replace(/\s*\(\d+\s+(?:points?|minutes? timeout)\)/gi,"").trim();
+                  const pts = kind === "points" ? raw : ((x.match(/\((\d+)\s+points?\)/i)||[])[1] ?? "0");
+                  const mins = kind === "timeout" ? raw : ((x.match(/\((\d+)\s+minutes? timeout\)/i)||[])[1] ?? "0");
+                  return clean+" ("+mins+" minutes timeout) ("+pts+" points)";
+                }).join("\n"));
+              };
               return <div className="panel" key={title+"-"+i}>
-                <div className="panelHeading"><div><b>{title}</b><p className="hint">{line}</p></div><button className="secondary" type="button" onClick={() => {setRulesText(v=>v.split("\n").filter(x=>x.trim()!==line).join("\n"));setRulePolicies(p=>{const n={...p};delete n[title];return n;});}}>Remove</button></div>
+                <div className="panelHeading"><div><b>{title}</b><p className="hint">{line}</p></div><button className="secondary" type="button" onClick={() => {
+                  setRulesText(v => v.split("\n").filter(x => x.trim() !== line).join("\n"));
+                  setRulePolicies(p => {const n={...p};delete n[title];return n;});
+                }}>Remove</button></div>
                 <label className="toggle"><span><b>Apply in all channels</b><small>Turn off to choose specific channels.</small></span><input type="checkbox" checked={Boolean(policy.allChannels)} onChange={e=>setRulePolicies(p=>({...p,[title]:{...policy,allChannels:e.target.checked}}))}/></label>
                 {!policy.allChannels && <div className="moduleGrid" style={{marginTop:12}}>
                   {channels.map(ch => <label className="toggle" key={ch.id}><span><b>#{ch.name}</b></span><input type="checkbox" checked={(policy.channelIds||[]).includes(ch.id)} onChange={e=>setRulePolicies(p=>({...p,[title]:{...policy,channelIds:e.target.checked?[...(policy.channelIds||[]),ch.id]:(policy.channelIds||[]).filter(id=>id!==ch.id)}}))}/></label>)}
                   {channels.length===0 && <p className="hint">No text channels loaded. Check the bot's channel-list permissions.</p>}
                 </div>}
-                <label className="fieldLabel">Points for this rule</label>
-                <input type="text" inputMode="numeric" value={(line.match(/\((\d*) points?\)/i)||[])[1] ?? ""} onChange={e=>{const raw=e.target.value.replace(/\D/g,"");setRulesText(v=>v.split("\n").map(x=>x===line?x.replace(/ \(\d* points?\)/i,"")+" ("+raw+" points)":x).join("\n"));}}/>
-                <label className="fieldLabel">Timeout (minutes, 0 = no timeout)</label>
-                <input type="text" inputMode="numeric" value={(line.match(/\((\d*) minutes? timeout\)/i)||[])[1] ?? ""} onChange={e=>{const raw=e.target.value.replace(/\D/g,"");setRulesText(v=>v.split("\n").map(x=>x===line?x.replace(/ \(\d* minutes? timeout\)/i,"")+" ("+raw+" minutes timeout)":x).join("\n"));}}/>
+                <div className="moduleGrid" style={{marginTop:12}}>
+                  <div><label className="fieldLabel">Points</label><input type="text" inputMode="numeric" value={pointValue} onChange={e=>updateSetting("points",e.target.value.replace(/\D/g,""))}/></div>
+                  <div><label className="fieldLabel">Timeout (minutes, 0 = none)</label><input type="text" inputMode="numeric" value={timeoutValue} onChange={e=>updateSetting("timeout",e.target.value.replace(/\D/g,""))}/></div>
+                </div>
               </div>;
             })}
-            <label className="fieldLabel">Rules / headings editor</label>
-            <textarea rows={6} value={rulesText} onChange={e=>setRulesText(e.target.value)} placeholder={"# CHAT RULES\nDon't spam in chat (30 minutes timeout) (2 points)\n# GENERAL RULES\nBe respectful to members (1 point)"}/>
+            <label className="fieldLabel">Rules / headings editor (optional)</label>
+            <textarea rows={6} value={rulesText} onChange={e=>setRulesText(e.target.value)} placeholder={"#LINKS\nNo unauthorized links (0 minutes timeout) (1 points)"}/>
             <div className="sectionDivider"></div>
             <h3>Spam detection thresholds</h3>
             <div className="moduleGrid">
@@ -243,6 +268,7 @@ export default function Home() {
               <div><label className="fieldLabel">Repeat window (seconds)</label><input type="number" min="2" max="120" value={settings.spamDetection?.repeatWindowSeconds ?? 15} onChange={e=>setSettings(p=>({...p,spamDetection:{...p.spamDetection,repeatWindowSeconds:Number(e.target.value)}}))}/></div>
             </div>
           </>}
+
           {active === "AutoMod" && <>
             <label className="toggle"><span><b>Enable automatic message checks</b><small>Detects suspicious promotion links and message floods.</small></span><input type="checkbox" checked={settings.automod.enabled} onChange={e => setSettings(p => ({...p, automod:{...p.automod, enabled:e.target.checked}}))}/></label>
             <label className="fieldLabel">Automatic timeout duration (minutes)</label><input type="number" min="0" max="40320" value={settings.automod.autoTimeoutMinutes} onChange={e => setSettings(p => ({...p, automod:{...p.automod, autoTimeoutMinutes:Number(e.target.value)}}))}/><p className="hint">Set 0 to only send a rule-review DM without automatically timing out. A positive value enables timeout for the bot's supported detections only. Custom rules written as plain text are displayed in /rules but are not automatically understood as detection logic.</p>
