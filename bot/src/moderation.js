@@ -27,7 +27,7 @@ function parseRuleAction(ruleText) {
 }
 
 // Conservative, rule-aware signal detection. Custom rules define the action; signals define when they match.
-function inspectMessage(message, rules = []) {
+function inspectMessage(message, rules = [], spamConfig = {}) {
   const content = (message.content || "").trim();
   const normalized = content.toLowerCase().replace(/\s+/g, " ").trim();
   const now = Date.now();
@@ -40,8 +40,12 @@ function inspectMessage(message, rules = []) {
   history.push({ time: now, content: normalized });
   recentMessages.set(key, history);
 
-  const rapid = history.filter(item => now - item.time <= 6000).length >= 5;
-  const repeated = normalized.length >= 3 && history.filter(item => item.content === normalized).length >= 4;
+  const rapidCount = Math.max(2, Math.min(30, Number(spamConfig.messages || 5)));
+  const rapidWindowSeconds = Math.max(1, Math.min(60, Number(spamConfig.windowSeconds || 6)));
+  const repeatCount = Math.max(2, Math.min(20, Number(spamConfig.repeats || 4)));
+  const repeatWindowSeconds = Math.max(2, Math.min(120, Number(spamConfig.repeatWindowSeconds || 15)));
+  const rapid = history.filter(item => now - item.time <= rapidWindowSeconds * 1000).length >= rapidCount;
+  const repeated = normalized.length >= 3 && history.filter(item => item.content === normalized && now - item.time <= repeatWindowSeconds * 1000).length >= repeatCount;
   const spam = hasSpamRule && (rapid || repeated);
   const spamRule = spamRules[0];
   const ruleText = typeof spamRule === "string" ? spamRule : [spamRule?.title, spamRule?.description, spamRule?.text].filter(Boolean).join(" ");
@@ -53,7 +57,7 @@ function inspectMessage(message, rules = []) {
       const action = parseRuleAction(ruleText);
       return {
         status: "review", ruleId: (typeof spamRule === "object" && spamRule.id) || "spam",
-        ruleText, reason: rapid ? "Spam: 5 messages within 6 seconds" : "Spam: same message repeated 4 times within 15 seconds",
+        ruleText,  reason: rapid ? "Spam: " + rapidCount + " messages within " + rapidWindowSeconds + " seconds" : "Spam: same message repeated " + repeatCount + " times within " + repeatWindowSeconds + " seconds",
         points: 2, ...action
       };
     }
