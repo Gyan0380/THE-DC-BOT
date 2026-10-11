@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSession } from "../../../../lib/session";
+import { getSession } from "../../../lib/session";
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 
