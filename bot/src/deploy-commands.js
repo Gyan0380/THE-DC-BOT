@@ -3,9 +3,14 @@ const { REST, Routes, SlashCommandBuilder, PermissionFlagsBits, ChannelType } = 
 
 const commands = [
   new SlashCommandBuilder().setName("rules").setDescription("Show server rules"),
+  new SlashCommandBuilder().setName("ai-setup").setDescription("Securely configure this server’s Gemini or DeepSeek API key")
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .addStringOption(o => o.setName("provider").setDescription("AI provider").setRequired(true).addChoices({ name: "Google Gemini", value: "gemini" }, { name: "DeepSeek", value: "deepseek" })),
+  new SlashCommandBuilder().setName("diagnose").setDescription("Check AI key, provider authentication and bot setup")
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
   new SlashCommandBuilder().setName("rules-set").setDescription("Set server rules, one per line")
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
-    .addStringOption(o => o.setName("rules").setDescription("Write each rule on a new line").setRequired(true).setMaxLength(4000)),
+    .addStringOption(o => o.setName("rules").setDescription("Write each rule on a new line, including explicit actions/durations").setRequired(true).setMaxLength(4000)),
   new SlashCommandBuilder().setName("welcome-config").setDescription("Open the Welcome & Goodbye setup panel")
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
   new SlashCommandBuilder().setName("punish").setDescription("Open the moderation control panel")
