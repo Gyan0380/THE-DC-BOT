@@ -16,6 +16,8 @@ export default function Home() {
   const [moderationForm, setModerationForm] = useState({ action: "timeout", userId: "", minutes: 10, reason: "" });
   const [settings, setSettings] = useState({ welcome: { enabled: false, channelId: "", message: "Welcome {user} to {server}!" }, goodbye: { enabled: false, channelId: "", message: "Goodbye {user}!" }, rules: [], automod: { enabled: false, autoTimeoutMinutes: 0 }, spamDetection: { messages: 5, windowSeconds: 6, repeats: 4, repeatWindowSeconds: 15 }, moderation: {}, giveaways: {}, logs: {} });
   const [rulesText, setRulesText] = useState("");
+  const [ruleSearch, setRuleSearch] = useState("");
+  const [rulePolicies, setRulePolicies] = useState({});
   const [aiInfo, setAiInfo] = useState({ configured: false, enabled: false, provider: "", keyOwnerId: "" });
   const [aiProvider, setAiProvider] = useState("gemini");
   const [aiKey, setAiKey] = useState("");
@@ -59,7 +61,7 @@ export default function Home() {
         setSettings({
           welcome: { enabled: Boolean(s.welcome?.enabled), channelId: s.welcome?.channelId || "", message: s.welcome?.message || "Welcome {user} to {server}!" },
           goodbye: { enabled: Boolean(s.goodbye?.enabled), channelId: s.goodbye?.channelId || "", message: s.goodbye?.message || "Goodbye {user}!" },
-          rules: Array.isArray(s.rules) ? s.rules : [],
+          rules: Array.isArray(s.rules) ? s.rules : [],\n          rulePolicies: s.rulePolicies && typeof s.rulePolicies === "object" ? s.rulePolicies : {},
           ai: s.ai || {},
           automod: { enabled: Boolean(s.automod?.enabled), autoTimeoutMinutes: Number(s.automod?.autoTimeoutMinutes || 0) },
           spamDetection: { messages: Number(s.spamDetection?.messages || 5), windowSeconds: Number(s.spamDetection?.windowSeconds || 6), repeats: Number(s.spamDetection?.repeats || 4), repeatWindowSeconds: Number(s.spamDetection?.repeatWindowSeconds || 15) },
@@ -191,28 +193,54 @@ export default function Home() {
             {channelError && <p className="hint">Channel list: {channelError} You can also configure channels with /welcome-setup and /goodbye-setup in Discord.</p>}
           </>}
           {active === "Rules" && <>
-            <h3>Server rules and headings</h3>
-            <p className="hint">Use headings starting with #, for example # CHAT RULES. The /rules command will display the heading and the rules below it.</p>
-            <div className="actions" style={{justifyContent:"flex-start",flexWrap:"wrap",borderTop:0,paddingTop:0}}>
-              <button className="secondary" type="button" onClick={() => setRulesText(v => (v ? v + "\n" : "") + "# CHAT RULES\nDon't spam in chat")}>+ Chat rules</button>
-              <button className="secondary" type="button" onClick={() => setRulesText(v => (v ? v + "\n" : "") + "# GENERAL RULES\nBe respectful to everyone")}>+ General rules</button>
-              <button className="secondary" type="button" onClick={() => setRulesText(v => (v ? v + "\n" : "") + "# VOICE CHAT RULES\nNo mic spam")}>+ Voice rules</button>
-              <button className="secondary" type="button" onClick={() => setRulesText(v => (v ? v + "\n" : "") + "Don't spam in chat (30 minutes timeout) (2 points)")}>+ Spam rule · timeout + points</button>
-              <button className="secondary" type="button" onClick={() => setRulesText(v => (v ? v + "\n" : "") + "Be respectful to members (1 point)")}>+ Rule · 1 point</button>
-              <button className="secondary" type="button" onClick={() => setRulesText(v => (v ? v + "\n" : "") + "No advertising (3 points)")}>+ Rule · 3 points</button>
+            <h3>Rule library</h3>
+            <p className="hint">Type # to search rule categories (Instagram-style). Choose a suggestion to add it, then configure which channels it applies to. Select multiple channels or use all channels.</p>
+            <label className="fieldLabel">Search categories and rules</label>
+            <input value={ruleSearch} onChange={e => setRuleSearch(e.target.value)} placeholder="Try #ADVERTISEMENT, #SPAM, #CHAT, #VOICE..." />
+            <div className="moduleGrid" style={{marginTop:12}}>
+              {[
+                {tag:"#ADVERTISEMENT",title:"No advertising",desc:"Block promotional messages and invite links",points:3,timeout:30},
+                {tag:"#SPAM",title:"Don't spam in chat",desc:"Detect rapid/repeated messages",points:2,timeout:30},
+                {tag:"#HARASSMENT",title:"No harassment or insults",desc:"Keep conversations respectful",points:2,timeout:10},
+                {tag:"#LINKS",title:"No unauthorized links",desc:"Restrict links in selected channels",points:1,timeout:0},
+                {tag:"#VOICE",title:"No voice/mic spam",desc:"Voice chat conduct rule",points:1,timeout:0},
+                {tag:"#GENERAL",title:"Be respectful to members",desc:"General community conduct",points:1,timeout:0},
+                {tag:"#SCAM",title:"No scams or fake giveaways",desc:"Protect members from misleading offers",points:3,timeout:60},
+                {tag:"#CAPS",title:"Avoid excessive caps",desc:"Reduce all-caps message flooding",points:1,timeout:0},
+              ].filter(item => !ruleSearch || (item.tag+" "+item.title+" "+item.desc).toLowerCase().includes(ruleSearch.replace(/^#/,"").toLowerCase()) || item.tag.toLowerCase().includes(ruleSearch.toLowerCase())).map(item => <div className="module" key={item.tag}>
+                <span>{item.tag}</span><b>{item.title}</b><small className="muted">{item.desc}</small>
+                <button className="secondary" type="button" onClick={() => { setRulesText(v => v.split("\\n").includes(item.title+" ("+item.timeout+" minutes timeout) ("+item.points+" points)") ? v : (v ? v+"\\n" : "")+item.title+" ("+item.timeout+" minutes timeout) ("+item.points+" points)"); setRulePolicies(p => ({...p,[item.title]:p[item.title]||{allChannels:true,channelIds:[],excludedChannelIds:[]}})); }}>+ Add rule</button>
+              </div>)}
             </div>
-            <label className="fieldLabel">Rules editor (one rule or # heading per line)</label>
-            <textarea rows={10} value={rulesText} onChange={e => setRulesText(e.target.value)} placeholder={"# CHAT RULES\nDon't spam in chat (30 minutes timeout)\nNo advertising\n# GENERAL RULES\nBe respectful"}/>
             <div className="sectionDivider"></div>
-            <h3>Spam detection customisation</h3>
-            <p className="hint">These settings control the built-in spam detector. Timeout duration and points are read from the matching spam rule above. Points are logged per moderation event; automatic strike totals are not implemented.</p>
+            <h3>Selected rules & channel settings</h3>
+            <p className="hint">Choose the channels where each rule is active. If “All channels” is selected, exclusions are respected. Channel-specific automatic enforcement depends on the bot handler supporting that rule type.</p>
+            {rulesText.split("\\n").map(line => line.trim()).filter(line => line && !line.startsWith("#")).map((line,i) => {
+              const title = line.replace(/ \\([^)]*\\)$/,"");
+              const policy = rulePolicies[title] || {allChannels:true,channelIds:[],excludedChannelIds:[]};
+              return <div className="panel" key={title+"-"+i}>
+                <div className="panelHeading"><div><b>{title}</b><p className="hint">{line}</p></div><button className="secondary" type="button" onClick={() => {setRulesText(v=>v.split("\\n").filter(x=>x.trim()!==line).join("\\n"));setRulePolicies(p=>{const n={...p};delete n[title];return n;});}}>Remove</button></div>
+                <label className="toggle"><span><b>Apply in all channels</b><small>Turn off to choose specific channels.</small></span><input type="checkbox" checked={Boolean(policy.allChannels)} onChange={e=>setRulePolicies(p=>({...p,[title]:{...policy,allChannels:e.target.checked}}))}/></label>
+                {!policy.allChannels && <div className="moduleGrid" style={{marginTop:12}}>
+                  {channels.map(ch => <label className="toggle" key={ch.id}><span><b>#{ch.name}</b></span><input type="checkbox" checked={(policy.channelIds||[]).includes(ch.id)} onChange={e=>setRulePolicies(p=>({...p,[title]:{...policy,channelIds:e.target.checked?[...(policy.channelIds||[]),ch.id]:(policy.channelIds||[]).filter(id=>id!==ch.id)}}))}/></label>)}
+                  {channels.length===0 && <p className="hint">No text channels loaded. Check the bot's channel-list permissions.</p>}
+                </div>}
+                <label className="fieldLabel">Points for this rule</label>
+                <input type="number" min="0" max="100" value={Number((line.match(/\\b(\\d+) points?\\b/i)||[])[1]||0)} onChange={e=>setRulesText(v=>v.split("\\n").map(x=>x===line?x.replace(/ \\(\\d+ points?\\)/i,"")+" ("+Number(e.target.value)+" points)":x).join("\\n"))}/>
+                <label className="fieldLabel">Timeout (minutes, 0 = no timeout)</label>
+                <input type="number" min="0" max="40320" value={Number((line.match(/\\((\\d+) minutes? timeout\\)/i)||[])[1]||0)} onChange={e=>setRulesText(v=>v.split("\\n").map(x=>x===line?x.replace(/ \\(\\d+ minutes? timeout\\)/i,"")+" ("+Number(e.target.value)+" minutes timeout)":x).join("\\n"))}/>
+              </div>;
+            })}
+            <label className="fieldLabel">Rules / headings editor</label>
+            <textarea rows={6} value={rulesText} onChange={e=>setRulesText(e.target.value)} placeholder={"# CHAT RULES\\nDon't spam in chat (30 minutes timeout) (2 points)\\n# GENERAL RULES\\nBe respectful to members (1 point)"}/>
+            <div className="sectionDivider"></div>
+            <h3>Spam detection thresholds</h3>
             <div className="moduleGrid">
-              <div><label className="fieldLabel">Messages in burst</label><input type="number" min="2" max="30" value={settings.spamDetection?.messages ?? 5} onChange={e => setSettings(p => ({...p,spamDetection:{...p.spamDetection,messages:Number(e.target.value)}}))}/></div>
-              <div><label className="fieldLabel">Burst window (seconds)</label><input type="number" min="1" max="60" value={settings.spamDetection?.windowSeconds ?? 6} onChange={e => setSettings(p => ({...p,spamDetection:{...p.spamDetection,windowSeconds:Number(e.target.value)}}))}/></div>
-              <div><label className="fieldLabel">Same message repeats</label><input type="number" min="2" max="20" value={settings.spamDetection?.repeats ?? 4} onChange={e => setSettings(p => ({...p,spamDetection:{...p.spamDetection, repeats:Number(e.target.value)}}))}/></div>
-              <div><label className="fieldLabel">Repeat window (seconds)</label><input type="number" min="2" max="120" value={settings.spamDetection?.repeatWindowSeconds ?? 15} onChange={e => setSettings(p => ({...p,spamDetection:{...p.spamDetection,repeatWindowSeconds:Number(e.target.value)}}))}/></div>
+              <div><label className="fieldLabel">Messages in burst</label><input type="number" min="2" max="30" value={settings.spamDetection?.messages ?? 5} onChange={e=>setSettings(p=>({...p,spamDetection:{...p.spamDetection,messages:Number(e.target.value)}}))}/></div>
+              <div><label className="fieldLabel">Burst window (seconds)</label><input type="number" min="1" max="60" value={settings.spamDetection?.windowSeconds ?? 6} onChange={e=>setSettings(p=>({...p,spamDetection:{...p.spamDetection,windowSeconds:Number(e.target.value)}}))}/></div>
+              <div><label className="fieldLabel">Same message repeats</label><input type="number" min="2" max="20" value={settings.spamDetection?.repeats ?? 4} onChange={e=>setSettings(p=>({...p,spamDetection:{...p.spamDetection,repeats:Number(e.target.value)}}))}/></div>
+              <div><label className="fieldLabel">Repeat window (seconds)</label><input type="number" min="2" max="120" value={settings.spamDetection?.repeatWindowSeconds ?? 15} onChange={e=>setSettings(p=>({...p,spamDetection:{...p.spamDetection,repeatWindowSeconds:Number(e.target.value)}}))}/></div>
             </div>
-            <p className="hint">Example: 5 messages in 6 seconds OR the same message 4 times in 15 seconds. Bot needs Manage Messages to delete spam and Moderate Members to apply timeout.</p>
           </>}
           {active === "AutoMod" && <>
             <label className="toggle"><span><b>Enable automatic message checks</b><small>Detects suspicious promotion links and message floods.</small></span><input type="checkbox" checked={settings.automod.enabled} onChange={e => setSettings(p => ({...p, automod:{...p.automod, enabled:e.target.checked}}))}/></label>
