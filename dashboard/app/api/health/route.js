@@ -19,17 +19,26 @@ function getAdminDb() {
 
 export async function GET() {
   let firebase = "not_configured";
+  let bot = "unknown";
   try {
     const db = getAdminDb();
-    await db.collection("_health").doc("connection").get();
+    const snapshot = await db.collection("_health").doc("connection").get();
     firebase = "connected";
+    if (snapshot.exists) {
+      const checkedAt = Date.parse(snapshot.data()?.checkedAt || "");
+      if (Number.isFinite(checkedAt) && Date.now() - checkedAt <= 90000) {
+        bot = "online";
+      } else {
+        bot = "offline";
+      }
+    } else {
+      bot = "offline";
+    }
   } catch (error) {
     firebase = process.env.FIREBASE_SERVICE_ACCOUNT_JSON ? "unavailable" : "not_configured";
   }
 
-  // The bot currently writes its health document at startup only. Do not
-  // mistake an old startup record for a live heartbeat.
-  return NextResponse.json({ firebase, bot: "unknown", checkedAt: new Date().toISOString() }, {
+  return NextResponse.json({ firebase, bot, checkedAt: new Date().toISOString() }, {
     headers: { "Cache-Control": "no-store, max-age=0" }
   });
 }
