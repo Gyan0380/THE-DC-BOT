@@ -1,5 +1,16 @@
 import { NextResponse } from "next/server";
 import { getSession } from "../../../../lib/session";
+import { initializeApp, cert, getApps } from "firebase-admin/app";
+import { getFirestore } from "firebase-admin/firestore";
+
+function db() {
+  const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+  if (!raw) return null;
+  const key = JSON.parse(raw);
+  key.private_key = key.private_key.replace(/\\n/g, "\n");
+  const app = getApps().find(a => a.name === "dashboard-admin") || initializeApp({ credential: cert(key), projectId: key.project_id }, "dashboard-admin");
+  return getFirestore(app);
+}
 
 export const dynamic = "force-dynamic";
 
@@ -46,7 +57,41 @@ export async function POST(request) {
         (data.message || "Discord moderation action failed.");
       return NextResponse.json({ error: message }, { status: response.status });
     }
-    return NextResponse.json({ ok: true, message: action + " completed for member ID " + userId + "." });
+    let dmSent = false;
+    try {
+      const dmChannelResponse = await fetch("https://discord.com/api/v10/users/@me/channels", {
+        method: "POST", headers: { Authorization: "Bot " + token, "Content-Type": "application/json" },
+        body: JSON.stringify({ recipient_id: userId }), cache: "no-store"
+      });
+      const dmChannel = await dmChannelResponse.json();
+      if (dmChannelResponse.ok && dmChannel.id) {
+        const actionLabel = action === "untimeout" ? "Timeout removed" : action.toUpperCase();
+        const description = action === "timeout"
+          ? "You have been timed out in this server for " + minutes + " minute(s)."
+          : action === "untimeout" ? "Your timeout has been removed."
+          : action === "kick" ? "You have been kicked from this server."
+          : "You have been banned from this server.";
+        const messageResponse = await fetch("https://discord.com/api/v10/channels/" + dmChannel.id + "/messages", {
+          method: "POST", headers: { Authorization: "Bot " + token, "Content-Type": "application/json" },
+          body: JSON.stringify({ embeds: [{ title: "Moderation Notice", description, fields: [
+            { name: "Action", value: actionLabel, inline: true },
+            { name: "Moderator", value: String(session.user?.username || "Server moderator"), inline: true },
+            { name: "Reason", value: why.slice(0, 900) }
+          ], footer: { text: "THE DC BOT" }, timestamp: new Date().toISOString() }] }), cache: "no-store"
+        });
+        dmSent = messageResponse.ok;
+      }
+    } catch {}
+    try {
+      const firestore = db();
+      if (firestore) await firestore.collection("modlogs").add({
+        guildId, action, userId, moderatorId: session.user?.id || "dashboard",
+        moderatorName: session.user?.username || "Dashboard moderator", reason: why,
+        durationMinutes: action === "timeout" ? Number(minutes) : null,
+        dmSent, status: "completed", createdAt: new Date()
+      });
+    } catch (error) { console.error("Could not save dashboard moderation log:", error); }
+    return NextResponse.json({ ok: true, dmSent, message: action + " completed for member ID " + userId + ". DM " + (dmSent ? "sent." : "could not be delivered; the member may have DMs disabled.") });
   } catch {
     return NextResponse.json({ error: "Could not contact Discord. Try again." }, { status: 502 });
   }
