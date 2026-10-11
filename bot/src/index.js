@@ -64,13 +64,32 @@ client.on(Events.MessageCreate, async message => {
     const settings = await getGuildSettings(message.guildId);
     if (settings.automod?.enabled === false) return;
 
-    // Run built-in spam/flood checks even when AI moderation is configured.
-    const deterministicFinding = inspectMessage(message);
+    // Run rule-aware spam checks before optional AI moderation.
+    const deterministicFinding = inspectMessage(message, settings.rules || []);
     if (deterministicFinding.status === "review") {
-      await saveReview(client, message, deterministicFinding);
-      const dmSent = await dmMember(message.author, message.guild, client.user, "Rule review notice",
-        "Your message activity was flagged for moderator review under Rule " + deterministicFinding.ruleId + ": " + deterministicFinding.reason + ". No automatic punishment was applied.", null);
-      console.log("Moderation review flagged:", { guildId: message.guildId, userId: message.author.id, ruleId: deterministicFinding.ruleId, dmSent });
+      let appliedAction = "warning";
+      let durationMinutes = null;
+      let reason = "Rule " + deterministicFinding.ruleId + ": " + deterministicFinding.reason;
+      if (deterministicFinding.action === "timeout" && Number.isInteger(deterministicFinding.durationMinutes)) {
+        const member = message.member || await message.guild.members.fetch(message.author.id).catch(() => null);
+        if (member?.moderatable && member.id !== message.guild.ownerId) {
+          try {
+            durationMinutes = deterministicFinding.durationMinutes;
+            await member.timeout(durationMinutes * 60000, reason);
+            appliedAction = "timeout";
+          } catch (timeoutError) {
+            console.error("Rule timeout failed:", timeoutError.message);
+          }
+        } else {
+          console.warn("Configured timeout could not be applied; sending warning instead.", { guildId: message.guildId, userId: message.author.id });
+        }
+      }
+      const findingToSave = { ...deterministicFinding, action: appliedAction, durationMinutes };
+      await saveReview(client, message, findingToSave);
+      const dmSent = appliedAction === "timeout"
+        ? await dmMember(message.author, message.guild, client.user, "Automatic timeout", reason, durationMinutes + " minutes")
+        : await dmMember(message.author, message.guild, client.user, "Rule warning", reason + ". No timeout duration was configured, so this is a warning only.", null);
+      console.log("Rule enforcement recorded:", { guildId: message.guildId, userId: message.author.id, ruleId: deterministicFinding.ruleId, action: appliedAction, durationMinutes, dmSent });
       return;
     }
 
