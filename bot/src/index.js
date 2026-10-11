@@ -40,7 +40,7 @@ client.on(Events.GuildMemberAdd, async member => {
     const message = String(cfg.message || "Welcome {user} to {server}!")
       .replaceAll("{user}", member.toString())
       .replaceAll("{server}", member.guild.name);
-    await channel.send({ content: message.slice(0, 1900), allowedMentions: { users: [member.id] } });
+    await channel.send({ content: (message.slice(0, 1650) + "\n\n🌐 Dashboard: " + dashUrl).slice(0, 1900), allowedMentions: { users: [member.id] } });
   } catch (error) { console.error("Welcome handler failed:", error); }
 });
 
@@ -220,7 +220,7 @@ client.on(Events.InteractionCreate, async interaction => {
         await interaction.reply({ content: "You need Manage Server permission.", ephemeral: true }); return;
       }
       const raw = interaction.options.getString("rules", true);
-      const rules = raw.split(/\n|\s*\|\s*/).map(line => line.trim()).filter(Boolean).slice(0, 30);
+      const rules = raw.split(/\n|\s*\|\s*/).map(line => line.trim()).filter(Boolean).slice(0, 200);
       if (!rules.length) { await interaction.reply({ content: "Add at least one rule, one per line.", ephemeral: true }); return; }
       await patchGuildSettings(interaction.guildId, { rules });
       await interaction.reply({ content: "Saved " + rules.length + " rules. The /rules command now uses these rules.", ephemeral: true });
