@@ -2,63 +2,128 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-const nav = [
-  ["Overview", "⌂"], ["Moderation", "⚑"], ["Welcome & Goodbye", "✦"],
-  ["Rules", "☷"], ["AutoMod", "◇"], ["Giveaways", "✳"], ["Logs", "≡"], ["Settings", "⚙"]
-];
+const sections = ["Overview", "Welcome & Goodbye", "Rules", "AutoMod", "Moderation", "Giveaways", "Logs", "Settings"];
 
 export default function Home() {
-  const [servers, setServers] = useState([]);
   const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [authError, setAuthError] = useState("");
-  useEffect(() => { fetch("/api/auth/session").then(r => r.json()).then(d => { if (d.authenticated) { setUser(d.user); setServers(d.guilds || []); } }).catch(() => setAuthError("Could not load session.")).finally(() => setLoading(false)); const e = new URLSearchParams(window.location.search).get("authError"); if (e) setAuthError(e); }, []);
-  const [serverId, setServerId] = useState("");
+  const [guilds, setGuilds] = useState([]);
+  const [guildId, setGuildId] = useState("");
   const [active, setActive] = useState("Overview");
-  const [search, setSearch] = useState("");
-  const server = servers.find(s => s.id === serverId) || null;
-  const [welcome, setWelcome] = useState("Welcome {user} to {server}!");
-  const [welcomeEnabled, setWelcomeEnabled] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const filtered = useMemo(() => servers.filter(s => s.name.toLowerCase().includes(search.toLowerCase())), [servers, search]);
+  const [loading, setLoading] = useState(true);
+  const [health, setHealth] = useState({ firebase: "checking", bot: "unknown" });
+  const [settings, setSettings] = useState({ welcome: { enabled: false, message: "Welcome {user} to {server}!" }, rules: [], automod: { enabled: false }, moderation: {}, giveaways: {}, logs: {} });
+  const [rulesText, setRulesText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [error, setError] = useState("");
 
-  function saveDemo() {
-    setSaved(true);
-    window.setTimeout(() => setSaved(false), 2600);
+  const guild = guilds.find(g => g.id === guildId) || null;
+  const canSave = Boolean(user && guild && !busy);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("authError")) setError(params.get("authError") || "Discord login failed.");
+    Promise.all([
+      fetch("/api/auth/session", { cache: "no-store" }).then(r => r.json()),
+      fetch("/api/health", { cache: "no-store" }).then(r => r.json()).catch(() => ({ firebase: "unknown", bot: "unknown" }))
+    ]).then(([session, status]) => {
+      setHealth(status);
+      if (session.authenticated) {
+        setUser(session.user);
+        setGuilds(session.guilds || []);
+        if (session.guilds?.length) setGuildId(session.guilds[0].id);
+      }
+    }).catch(() => setError("Could not load dashboard. Please refresh and try again."))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (!guildId || !user) return;
+    let cancelled = false;
+    fetch("/api/settings?guildId=" + encodeURIComponent(guildId), { cache: "no-store" })
+      .then(async r => { const d = await r.json(); if (!r.ok) throw new Error(d.error || "Could not load settings."); return d; })
+      .then(d => {
+        if (cancelled) return;
+        const s = d.settings || {};
+        setSettings({
+          welcome: { enabled: Boolean(s.welcome?.enabled), message: s.welcome?.message || "Welcome {user} to {server}!" },
+          rules: Array.isArray(s.rules) ? s.rules : [],
+          automod: { enabled: Boolean(s.automod?.enabled) },
+          moderation: s.moderation || {}, giveaways: s.giveaways || {}, logs: s.logs || {}
+        });
+        setRulesText((s.rules || []).map(r => typeof r === "string" ? r : r.title ? r.title + (r.description ? ": " + r.description : "") : JSON.stringify(r)).join("\n"));
+      })
+      .catch(e => { if (!cancelled) setError(e.message); });
+    return () => { cancelled = true; };
+  }, [guildId, user]);
+
+  async function save() {
+    if (!canSave) return;
+    setBusy(true); setNotice(""); setError("");
+    const next = { ...settings, rules: rulesText.split("\n").map(s => s.trim()).filter(Boolean) };
+    try {
+      const r = await fetch("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ guildId, settings: next }) });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "Save failed.");
+      setSettings(next);
+      setNotice("Settings saved to Firebase for this server. Bot behavior only changes where the bot has a matching live handler.");
+    } catch (e) { setError(e.message || "Could not save settings."); }
+    finally { setBusy(false); }
   }
 
-  return <main className="shell">
+  async function logout() {
+    await fetch("/api/auth/session", { method: "DELETE" });
+    window.location.href = "/";
+  }
+
+  const initials = useMemo(() => (user?.username || "DC").slice(0, 2).toUpperCase(), [user]);
+
+  return <main className="appShell">
     <aside className="sidebar">
-      <div className="brand"><div className="brandMark">DC</div><div><strong>THE DC BOT</strong><small>COMMUNITY CONTROL</small></div></div>
-      <div className="sideLabel">YOUR SERVERS</div>
-      {user && <input className="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search your servers..." aria-label="Search servers" />}
-      <div className="serverList">{filtered.map(s => <button key={s.id} className={"server " + (serverId === s.id ? "selected" : "")} onClick={() => {setServerId(s.id);setSaved(false);}}><span className="serverIcon">{s.icon ? "◆" : s.name.slice(0,2).toUpperCase()}</span><span className="serverName">{s.name}<small>Manageable server</small></span><span className="dot"/></button>)}</div>
-      <div className="sideLabel navLabel">DASHBOARD</div>
-      <nav>{nav.map(([name, icon]) => <button key={name} onClick={() => setActive(name)} className={"navItem " + (active === name ? "navActive" : "")}><span>{icon}</span>{name}</button>)}</nav>
-      <div className="sidebarBottom"><span className="avatar">{user ? user.username.slice(0,2).toUpperCase() : "DC"}</span><div><strong>{user ? user.username : "Not signed in"}</strong><small>{user ? "Discord account connected" : "Sign in to continue"}</small></div></div>
+      <div className="brand"><span className="brandMark">DC</span><span><b>THE DC BOT</b><small>COMMUNITY CONTROL</small></span></div>
+      <label className="label" htmlFor="server">YOUR SERVERS</label>
+      {user && <select id="server" value={guildId} onChange={e => { setGuildId(e.target.value); setNotice(""); setError(""); }}><option value="">Select a server</option>{guilds.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select>}
+      <div className="label navTitle">DASHBOARD</div>
+      <nav>{sections.map((s, i) => <button key={s} className={active === s ? "navItem active" : "navItem"} onClick={() => setActive(s)}><span>{["⌂","✦","☷","◇","⚑","✳","≡","⚙"][i]}</span>{s}</button>)}</nav>
+      <div className="profile"><span className="avatar">{initials}</span><span><b>{user?.username || "Not signed in"}</b><small>{user ? "Discord account connected" : "Sign in to continue"}</small></span></div>
     </aside>
     <section className="main">
-      <header className="topbar"><div><span className="crumb">Servers</span><span className="slash">/</span><strong>{server?.name || "Select a server"}</strong></div><span className="previewPill"><i/> UI PREVIEW</span></header>
+      <header className="topbar"><span>Servers <i>/</i> <b>{guild?.name || "Select a server"}</b></span><span className="statusTag"><i/> LIVE DATA ONLY</span></header>
       <div className="content">
-        <div className="welcomeRow"><div><p className="eyebrow">COMMUNITY CONTROL CENTER</p><h1>{active}</h1><p className="sub">{server ? <>Manage <b>{server.name}</b> from one place.</> : "Sign in and select a server you manage."}</p></div>{!user ? <a className="primary" href="/api/auth/discord">Login with Discord</a> : <button className="secondary" onClick={async()=>{await fetch("/api/auth/session",{method:"DELETE"});window.location.reload();}}>Log out</button>}</div>
-        <div className="notice"><span className="noticeIcon">i</span><div><strong>{authError || (loading ? "Checking Discord login…" : user ? "Connected to Discord account" : "Sign in required")}</strong><p>{user ? "Your manageable Discord servers are loaded from Discord. Settings API stores per-server configuration in Firestore; bot enforcement features must also be implemented and tested." : "Login with Discord to load real servers you own or can manage. Configure OAuth and Firebase environment variables in Vercel before using the dashboard."}</p></div></div>
-        {!user ? <div className="settingsPanel"><h2>Connect your Discord account</h2><p className="sub">Use Discord OAuth to securely load servers you can manage.</p><a className="primary" href="/api/auth/discord">Login with Discord</a></div> : !server ? <div className="settingsPanel"><h2>Select a server</h2><p className="sub">No manageable servers found. Make sure your Discord account has Manage Server permission.</p></div> : active === "Overview" ? <>
-          <div className="stats"><article className="stat"><span>MEMBERS (SAMPLE)</span><strong>{server.members}</strong><small>Example data only</small></article><article className="stat"><span>BOT STATUS</span><strong className="amber">Not linked</strong><small>Invite and configure the bot</small></article><article className="stat"><span>FIREBASE</span><strong>Pending</strong><small>Connection must be verified</small></article><article className="stat"><span>ACTIVE MODULES</span><strong>0</strong><small>No live modules yet</small></article></div>
-          <div className="sectionHeading"><div><h2>Server modules</h2><p>Choose a section from the sidebar to preview its controls.</p></div><span className="mutedTag">SERVER-SPECIFIC UI</span></div>
-          <div className="moduleGrid">{nav.slice(1,7).map(([name, icon], i) => <button className="module" key={name} onClick={() => setActive(name)}><span className="moduleIcon">{icon}</span><strong>{name}</strong><p>{["Review moderation tools and actions.","Set server join and leave messages.","Create and manage server rules.","Configure anti-spam options.","Preview giveaway management.","Review moderation and bot events."][i]}</p><span className="moduleFoot">OPEN SECTION <b>↗</b></span></button>)}</div>
-        </> : <div className="settingsPanel"><div className="sectionHeading"><div><h2>{active} settings</h2><p>Settings shown here are local preview only.</p></div><span className="mutedTag">NOT LIVE</span></div>
-          {active === "Welcome & Goodbye" ? <><label className="toggleRow"><span><strong>Enable welcome message</strong><small>Turn on when the live bot integration is ready.</small></span><input type="checkbox" checked={welcomeEnabled} onChange={e => setWelcomeEnabled(e.target.checked)} /></label><label className="fieldLabel">Welcome message template</label><textarea value={welcome} onChange={e => setWelcome(e.target.value)} rows={4}/><p className="hint">Supported example placeholders: {"{user}"} and {"{server}"} (preview only).</p></> :
-          active === "Rules" ? <><label className="fieldLabel">Server rules (preview)</label><textarea defaultValue={"1. Be respectful.\n2. No spam.\n3. Follow moderator instructions."} rows={6}/></> :
-          active === "Giveaways" ? <><label className="fieldLabel">Giveaway prize</label><input className="textInput" placeholder="e.g. Discord Nitro (example)"/><label className="fieldLabel">Announcement channel ID</label><input className="textInput" placeholder="Discord channel ID"/></> :
-          <div className="placeholderBlock"><div className="placeholderIcon">{nav.find(n => n[0] === active)?.[1] || "⚙"}</div><strong>{active} controls</strong><p>The visual section is ready to extend. Live actions require secure Discord permissions and server-side API integration.</p></div>}
-          <div className="panelActions"><button className="secondary" onClick={() => {setWelcome("Welcome {user} to {server}!");setWelcomeEnabled(false);}}>Reset preview</button><button className="primary" onClick={saveDemo}>Save demo settings</button></div>
-        </div>}
-        <footer>THE DC BOT · MULTI-SERVER DASHBOARD <span>Discord OAuth · Firebase settings API</span></footer>
+        <div className="heading"><div><p className="eyebrow">COMMUNITY CONTROL CENTER</p><h1>{active}</h1><p className="muted">{guild ? "Configure " + guild.name + " from one dashboard." : "Sign in with Discord and select a server you manage."}</p></div>
+          {!user ? <a className="primary" href="/api/auth/discord">Login with Discord</a> : <button className="secondary" onClick={logout}>Log out</button>}
+        </div>
+        {loading && <div className="notice">Checking your Discord session and service status…</div>}
+        {error && <div className="notice error"><b>Something needs attention</b><p>{error}</p><button className="secondary" onClick={() => { setError(""); window.location.href = "/"; }}>Clear error</button></div>}
+        {notice && <div className="notice success">{notice}</div>}
+        {!loading && !user && <section className="panel"><h2>Connect your Discord account</h2><p className="muted">Sign in to list servers where your account has Manage Server permission. No sample servers or fabricated statistics are shown.</p><a className="primary" href="/api/auth/discord">Continue with Discord</a></section>}
+        {!loading && user && !guild && <section className="panel"><h2>No manageable servers found</h2><p className="muted">Your Discord account did not return a server where you have Manage Server permission. Confirm the account and OAuth configuration.</p></section>}
+        {user && guild && active === "Overview" && <>
+          <div className="stats">
+            <article className="stat"><small>DISCORD ACCOUNT</small><strong className="good">Connected</strong><span>{user.username}</span></article>
+            <article className="stat"><small>SELECTED SERVER</small><strong>{guild.name}</strong><span>{guild.owner ? "You own this server" : "Manage Server permission returned by Discord"}</span></article>
+            <article className="stat"><small>FIREBASE</small><strong className={health.firebase === "connected" ? "good" : "warn"}>{health.firebase === "connected" ? "Connected" : health.firebase === "not_configured" ? "Not configured" : "Unverified"}</strong><span>Live connection check</span></article>
+            <article className="stat"><small>BOT CONNECTION</small><strong className="warn">{health.bot === "online" ? "Online" : "Not verified"}</strong><span>{health.bot === "online" ? "Heartbeat received" : "No live bot heartbeat configured"}</span></article>
+          </div>
+          <section className="panel"><div className="panelHeading"><div><h2>Server modules</h2><p className="muted">Open a section to edit and save its configuration.</p></div></div><div className="moduleGrid">{sections.slice(1,7).map(s => <button key={s} className="module" onClick={() => setActive(s)}><b>{s}</b><span>Open settings ↗</span></button>)}</div></section>
+          <section className="panel"><h2>Important</h2><p className="muted">Settings are saved per server in Firestore. A setting affects Discord behavior only when the bot has a corresponding handler implemented. Bot online status stays unverified until a heartbeat is added.</p></section>
+        </>}
+        {user && guild && active !== "Overview" && <section className="panel">
+          <div className="panelHeading"><div><h2>{active} configuration</h2><p className="muted">Saved to Firebase for <b>{guild.name}</b>. This does not claim that every option is already enforced by the bot.</p></div><span className="tag">SERVER SETTINGS</span></div>
+          {active === "Welcome & Goodbye" && <>
+            <label className="toggle"><span><b>Enable welcome message</b><small>Stored in the server configuration.</small></span><input type="checkbox" checked={settings.welcome.enabled} onChange={e => setSettings(p => ({...p, welcome:{...p.welcome, enabled:e.target.checked}}))}/></label>
+            <label className="fieldLabel">Welcome message template</label><textarea rows={4} value={settings.welcome.message} onChange={e => setSettings(p => ({...p, welcome:{...p.welcome, message:e.target.value}}))}/><p className="hint">Placeholders: {"{user}"} and {"{server}"}. A bot welcome event handler is still needed to send this automatically.</p>
+          </>}
+          {active === "Rules" && <><label className="fieldLabel">Rules (one per line)</label><textarea rows={8} value={rulesText} onChange={e => setRulesText(e.target.value)} placeholder={"Be respectful\nNo spam\nFollow moderator instructions"}/><p className="hint">These rules are saved in Firestore. The bot's current /rules command uses its existing rules collection, so these dashboard rules are not automatically synced to that command yet.</p></>}
+          {active === "AutoMod" && <label className="toggle"><span><b>Enable AutoMod configuration</b><small>Save the preference. Existing bot checks may not use this switch yet.</small></span><input type="checkbox" checked={settings.automod.enabled} onChange={e => setSettings(p => ({...p, automod:{...p.automod, enabled:e.target.checked}}))}/></label>}
+          {["Moderation","Giveaways","Logs","Settings"].includes(active) && <div className="placeholder"><b>{active} live actions are not fully implemented yet</b><p className="muted">This section will not pretend to perform actions that the bot API does not support. You can still save the current server configuration.</p></div>}
+          <div className="actions"><button className="secondary" onClick={() => window.location.reload()}>Reload saved values</button><button className="primary" disabled={!canSave} onClick={save}>{busy ? "Saving…" : "Save to Firebase"}</button></div>
+        </section>}
+        <footer>THE DC BOT <span>Discord OAuth · Firestore-backed settings</span></footer>
       </div>
     </section>
-    {saved && <div className="toast">Preview state updated — not saved to Firebase.</div>}
     <style jsx global>{`
-      *{box-sizing:border-box} body{margin:0;background:#0b0d12;color:#edf0f7;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}button,input,textarea{font:inherit}button{cursor:pointer}.shell{min-height:100vh;display:grid;grid-template-columns:258px minmax(0,1fr);background:#0b0d12}.sidebar{height:100vh;position:sticky;top:0;border-right:1px solid #242833;background:#0e1017;padding:23px 14px;display:flex;flex-direction:column;overflow:auto}.brand{display:flex;align-items:center;gap:11px;padding:0 9px 29px}.brandMark{height:39px;width:39px;border-radius:12px;display:grid;place-items:center;background:linear-gradient(135deg,#9b7aff,#6549df);font-weight:900;color:white;box-shadow:0 7px 24px #7157df33}.brand strong{display:block;font-size:13px;letter-spacing:1.1px}.brand small,.serverName small,.sidebarBottom small{display:block;font-size:10px;color:#777f91;margin-top:4px}.sideLabel{font-size:10px;color:#737b8f;letter-spacing:1.4px;font-weight:800;padding:0 9px 10px}.search,.textInput{width:100%;background:#151822;border:1px solid #2a2f3b;color:#edf0f7;border-radius:9px;padding:11px 12px;outline:none}.search{margin-bottom:12px;font-size:12px}.serverList{display:grid;gap:5px}.server{display:flex;align-items:center;gap:9px;width:100%;padding:9px 8px;border:1px solid transparent;background:transparent;color:#d4d8e4;border-radius:10px;text-align:left}.server.selected{background:#1a1d2a;border-color:#34304f}.serverIcon{height:31px;width:31px;display:grid;place-items:center;border-radius:9px;background:#28223e;color:#b9a8ff;font-size:10px;font-weight:800;flex-shrink:0}.serverName{font-size:11px;flex:1;min-width:0}.serverName small{font-size:9px}.dot{height:6px;width:6px;border-radius:50%;background:#e7b75e}.navLabel{margin-top:28px}.sidebar nav{display:grid;gap:4px}.navItem{border:0;background:transparent;color:#9da4b5;text-align:left;border-radius:9px;padding:11px 10px;font-size:12px;display:flex;gap:12px;align-items:center}.navItem span{width:18px;text-align:center;font-size:16px}.navActive{background:#27213e;color:#c8baff;box-shadow:inset 2px 0 #a78bfa}.sidebarBottom{margin-top:auto;padding:18px 6px 0;border-top:1px solid #252936;display:flex;gap:10px;align-items:center}.avatar{height:34px;width:34px;border-radius:50%;background:#27213e;display:grid;place-items:center;color:#c7b9ff;font-size:11px;font-weight:800}.sidebarBottom strong{font-size:11px}.main{min-width:0}.topbar{height:65px;border-bottom:1px solid #222631;display:flex;justify-content:space-between;align-items:center;padding:0 34px;color:#d8dce7;font-size:12px}.crumb{color:#777f91}.slash{padding:0 12px;color:#4f5666}.previewPill,.mutedTag{border:1px solid #42355f;background:#1e1930;color:#c5b5ff;border-radius:999px;padding:6px 9px;font-size:9px;font-weight:800;letter-spacing:.8px}.previewPill i{display:inline-block;width:6px;height:6px;border-radius:50%;background:#e6b85d;margin-right:6px}.content{max-width:1280px;margin:auto;padding:34px}.welcomeRow{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:23px}.eyebrow{color:#a78bfa;font-size:10px;font-weight:800;letter-spacing:2px;margin:0 0 9px}.welcomeRow h1{font-size:31px;letter-spacing:-1px;margin:0}.sub{font-size:13px;color:#8f97a9;margin:9px 0 0}.sub b{color:#d9dce7}.primary,.secondary{border-radius:9px;padding:11px 15px;font-size:11px;font-weight:750;border:1px solid transparent}.primary{display:inline-block;text-decoration:none;background:#9b83f5;color:#171222}.primary:hover{background:#b2a1ff}.secondary{background:#181b25;border-color:#303544;color:#cbd0dd}.notice{display:flex;gap:12px;background:#171522;border:1px solid #3d315d;border-radius:12px;padding:16px;margin-bottom:22px}.noticeIcon{height:23px;width:23px;display:grid;place-items:center;border-radius:50%;background:#33264f;color:#c5b5ff;font-weight:800;flex-shrink:0}.notice strong{font-size:12px;color:#d5caff}.notice p{font-size:11px;color:#a8a5b8;line-height:1.7;margin:5px 0 0}.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.stat{border:1px solid #262b37;background:#11141c;border-radius:12px;padding:18px}.stat span{display:block;font-size:9px;letter-spacing:1px;color:#80899c;font-weight:800}.stat strong{display:block;font-size:23px;margin:13px 0 7px}.stat small{font-size:10px;color:#747e92}.stat .amber{font-size:17px;color:#e6bc70}.sectionHeading{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:30px 0 14px}.sectionHeading h2{font-size:16px;margin:0}.sectionHeading p{font-size:11px;color:#7e879a;margin:7px 0 0}.moduleGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.module{background:#11141c;border:1px solid #282d3a;border-radius:12px;padding:17px;text-align:left;color:#e9ebf3;transition:transform .15s,border-color .15s}.module:hover{transform:translateY(-2px);border-color:#6f5ab4}.moduleIcon{display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:#28213e;color:#c7b7ff;font-size:18px;margin-bottom:17px}.module strong{font-size:12px}.module p{font-size:11px;color:#8b94a7;line-height:1.7;min-height:38px}.moduleFoot{display:flex;justify-content:space-between;color:#a995ff;font-size:9px;letter-spacing:.7px;margin-top:16px}.moduleFoot b{font-size:14px}.settingsPanel{border:1px solid #282d3a;background:#11141c;border-radius:14px;padding:22px}.settingsPanel .sectionHeading{margin:0 0 25px}.toggleRow{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:15px 0;border-bottom:1px solid #292e3a}.toggleRow strong,.toggleRow small{display:block;font-size:12px}.toggleRow small{font-size:10px;color:#818a9d;margin-top:6px}.toggleRow input{accent-color:#a78bfa;width:17px;height:17px}.fieldLabel{display:block;font-size:11px;color:#bdc3d1;margin:20px 0 9px}.settingsPanel textarea{width:100%;resize:vertical;background:#0c0f16;color:#e9ebf3;border:1px solid #303646;border-radius:9px;padding:12px;line-height:1.6;font-size:12px;outline:none}.hint{font-size:10px;color:#777f91}.panelActions{display:flex;justify-content:flex-end;gap:9px;margin-top:24px}.placeholderBlock{text-align:center;padding:50px 15px}.placeholderIcon{font-size:30px;color:#b9a7ff;margin-bottom:12px}.placeholderBlock strong{font-size:14px}.placeholderBlock p{font-size:11px;line-height:1.8;color:#8d96a8;max-width:390px;margin:10px auto}.textInput{margin-bottom:4px}footer{border-top:1px solid #222631;margin-top:35px;padding:18px 0;color:#858da0;font-size:9px;letter-spacing:1px;display:flex;justify-content:space-between;gap:12px}footer span{letter-spacing:0;text-transform:none}@media(max-width:1000px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.moduleGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.content{padding:25px}}@media(max-width:680px){.shell{grid-template-columns:1fr}.sidebar{height:auto;position:relative;padding:14px}.brand{padding-bottom:15px}.serverList{grid-template-columns:repeat(2,minmax(0,1fr))}.sidebar nav{grid-template-columns:repeat(2,minmax(0,1fr))}.sidebarBottom{margin-top:18px}.topbar{padding:0 16px}.content{padding:20px 14px}.welcomeRow{align-items:flex-start;flex-direction:column}.stats,.moduleGrid{grid-template-columns:1fr 1fr}.notice p{line-height:1.6}footer{flex-direction:column}}@media(max-width:390px){.stats,.moduleGrid{grid-template-columns:1fr}.previewPill{font-size:8px}}
+      *{box-sizing:border-box}body{margin:0;background:#0a0c12;color:#edf0f8;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}button,input,textarea,select{font:inherit}button{cursor:pointer}.appShell{min-height:100vh;display:grid;grid-template-columns:255px minmax(0,1fr)}.sidebar{height:100vh;position:sticky;top:0;background:#0e1018;border-right:1px solid #252a38;padding:22px 14px;display:flex;flex-direction:column;gap:10px;overflow:auto}.brand{display:flex;align-items:center;gap:11px;padding:0 8px 28px}.brandMark{width:40px;height:40px;display:grid;place-items:center;border-radius:12px;background:linear-gradient(135deg,#9a7aff,#6047df);font-weight:900}.brand b{display:block;font-size:13px;letter-spacing:1px}.brand small,.profile small{display:block;color:#82899c;font-size:10px;margin-top:4px}.label{font-size:10px;letter-spacing:1.4px;font-weight:800;color:#7f8799;padding:0 8px}.sidebar select{width:100%;background:#171a25;color:#e8eaf2;border:1px solid #2a3040;border-radius:9px;padding:11px}.navTitle{margin-top:18px}nav{display:grid;gap:4px}.navItem{display:flex;align-items:center;gap:12px;padding:11px 12px;border:0;border-radius:9px;background:transparent;color:#aeb4c5;text-align:left}.navItem span{width:19px;text-align:center}.navItem:hover,.navItem.active{background:#25203d;color:#c5b5ff}.profile{margin-top:auto;border-top:1px solid #252a38;padding:18px 6px 2px;display:flex;gap:10px;align-items:center}.profile b{font-size:12px}.avatar{width:34px;height:34px;border-radius:10px;background:#28243d;display:grid;place-items:center;color:#c8b9ff;font-weight:800}.main{min-width:0}.topbar{height:64px;border-bottom:1px solid #252a38;display:flex;justify-content:space-between;align-items:center;padding:0 30px;color:#858da1;font-size:12px}.topbar i{padding:0 10px;color:#4c5262}.topbar b{color:#e9ebf3}.statusTag,.tag{font-size:10px;letter-spacing:1px;color:#aeb5c6;border:1px solid #303545;border-radius:20px;padding:7px 10px}.statusTag i{display:inline-block;width:6px;height:6px;border-radius:50%;background:#9a8bff;margin-right:7px}.content{max-width:1320px;margin:0 auto;padding:32px}.heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:26px}.eyebrow{font-size:10px;font-weight:800;letter-spacing:1.7px;color:#a995ff;margin:0 0 9px}.heading h1{font-size:30px;margin:0;letter-spacing:-.8px}.muted{color:#9299ab;font-size:13px;line-height:1.7}.primary,.secondary{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;border:0;border-radius:9px;padding:11px 15px;font-size:12px;font-weight:800}.primary{background:#8a72f6;color:#fff}.primary:hover{background:#9b87ff}.primary:disabled{opacity:.5;cursor:not-allowed}.secondary{background:#202432;color:#d9dceb;border:1px solid #34394a}.notice{background:#171a25;border:1px solid #34394a;border-radius:10px;padding:14px 16px;margin:14px 0;color:#c8ccda;font-size:13px;line-height:1.6}.notice p{margin:6px 0}.notice.error{border-color:#74434c}.notice.success{border-color:#356a58}.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin:22px 0}.stat,.panel{background:#11141d;border:1px solid #272c3b;border-radius:13px}.stat{padding:18px;min-height:130px}.stat small{display:block;color:#858da1;font-size:10px;letter-spacing:1.1px;font-weight:800;margin-bottom:15px}.stat strong{display:block;font-size:18px;overflow-wrap:anywhere}.stat span{display:block;color:#9299ab;font-size:11px;margin-top:9px;line-height:1.5}.good{color:#76d6a8}.warn{color:#f0c27d}.panel{padding:22px;margin:18px 0}.panel h2{font-size:17px;margin:0 0 7px}.panelHeading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px}.panelHeading p{margin:0}.moduleGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.module{display:flex;flex-direction:column;gap:24px;align-items:flex-start;text-align:left;background:#171a25;border:1px solid #2a3040;border-radius:10px;padding:17px;color:#e8eaf3}.module span{font-size:11px;color:#a995ff}.fieldLabel{display:block;margin:20px 0 8px;font-size:12px;font-weight:700;color:#cfd3e0}textarea{width:100%;resize:vertical;background:#0b0e15;border:1px solid #303648;border-radius:9px;color:#e9ebf5;padding:12px;outline:none}textarea:focus,select:focus{border-color:#8a72f6}.hint{font-size:11px;color:#858da1;line-height:1.6}.toggle{display:flex;justify-content:space-between;align-items:center;gap:20px;padding:16px 0;border-bottom:1px solid #282d3b}.toggle b,.toggle small{display:block}.toggle small{color:#858da1;font-size:11px;margin-top:5px}.toggle input{width:18px;height:18px;accent-color:#8a72f6}.placeholder{padding:18px;border:1px dashed #353b4c;border-radius:10px}.placeholder p{margin-bottom:0}.actions{display:flex;justify-content:flex-end;gap:10px;margin-top:22px;padding-top:18px;border-top:1px solid #282d3b}footer{display:flex;justify-content:space-between;gap:12px;padding:24px 0;color:#6e768a;font-size:10px;letter-spacing:.8px}footer span{letter-spacing:0}@media(max-width:1050px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.moduleGrid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:720px){.appShell{grid-template-columns:1fr}.sidebar{height:auto;position:relative}.profile{margin-top:15px}.topbar{padding:0 16px}.content{padding:20px 15px}.heading{align-items:flex-start;flex-direction:column}.stats,.moduleGrid{grid-template-columns:1fr}.statusTag{display:none}footer{flex-direction:column}}
     `}</style>
   </main>;
 }
