@@ -16,6 +16,10 @@ export default function Home() {
   const [moderationForm, setModerationForm] = useState({ action: "timeout", userId: "", minutes: 10, reason: "" });
   const [settings, setSettings] = useState({ welcome: { enabled: false, channelId: "", message: "Welcome {user} to {server}!" }, goodbye: { enabled: false, channelId: "", message: "Goodbye {user}!" }, rules: [], automod: { enabled: false, autoTimeoutMinutes: 0 }, moderation: {}, giveaways: {}, logs: {} });
   const [rulesText, setRulesText] = useState("");
+  const [aiInfo, setAiInfo] = useState({ configured: false, enabled: false, provider: "", keyOwnerId: "" });
+  const [aiProvider, setAiProvider] = useState("gemini");
+  const [aiKey, setAiKey] = useState("");
+  const [aiBusy, setAiBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -52,12 +56,20 @@ export default function Home() {
           welcome: { enabled: Boolean(s.welcome?.enabled), channelId: s.welcome?.channelId || "", message: s.welcome?.message || "Welcome {user} to {server}!" },
           goodbye: { enabled: Boolean(s.goodbye?.enabled), channelId: s.goodbye?.channelId || "", message: s.goodbye?.message || "Goodbye {user}!" },
           rules: Array.isArray(s.rules) ? s.rules : [],
+          ai: s.ai || {},
           automod: { enabled: Boolean(s.automod?.enabled), autoTimeoutMinutes: Number(s.automod?.autoTimeoutMinutes || 0) },
           moderation: s.moderation || {}, giveaways: s.giveaways || {}, logs: s.logs || {}
         });
         setRulesText((s.rules || []).map(r => typeof r === "string" ? r : r.title ? r.title + (r.description ? ": " + r.description : "") : JSON.stringify(r)).join("\n"));
       })
       .catch(e => { if (!cancelled) setError(e.message); });
+    return () => { cancelled = true; };
+  }, [guildId, user]);
+
+  useEffect(() => {
+    if (!guildId || !user) return;
+    let cancelled = false;
+    fetch("/api/ai?guildId=" + encodeURIComponent(guildId), { cache: "no-store" }).then(async r => { const d = await r.json(); if (!r.ok) throw new Error(d.error || "Could not load AI settings."); return d; }).then(d => { if (!cancelled) { setAiInfo(d); setAiProvider(d.provider || "gemini"); setAiKey(""); } }).catch(() => { if (!cancelled) setAiInfo({ configured: false, enabled: false, provider: "", keyOwnerId: "" }); });
     return () => { cancelled = true; };
   }, [guildId, user]);
 
@@ -95,6 +107,19 @@ export default function Home() {
       setNotice("Settings saved to Firebase for this server. Bot behavior only changes where the bot has a matching live handler.");
     } catch (e) { setError(e.message || "Could not save settings."); }
     finally { setBusy(false); }
+  }
+
+  async function saveAiKey() {
+    if (!guildId || !aiKey.trim() || aiBusy) return;
+    setAiBusy(true); setNotice(""); setError("");
+    try { const r = await fetch("/api/ai", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ guildId, provider: aiProvider, apiKey: aiKey.trim() }) }); const d = await r.json(); if (!r.ok) throw new Error(d.error || "Could not configure AI."); setAiInfo({ configured: true, enabled: true, provider: aiProvider, keyOwnerId: user?.id || "" }); setAiKey(""); setNotice("AI key authenticated and encrypted for " + guild?.name + ". " + d.message); }
+    catch (e) { setError(e.message || "Could not configure AI."); } finally { setAiBusy(false); }
+  }
+  async function removeAiKey() {
+    if (!guildId || aiBusy || !window.confirm("Remove this server’s saved AI key?")) return;
+    setAiBusy(true); setNotice(""); setError("");
+    try { const r = await fetch("/api/ai?guildId=" + encodeURIComponent(guildId), { method: "DELETE" }); const d = await r.json(); if (!r.ok) throw new Error(d.error || "Could not remove AI configuration."); setAiInfo({ configured: false, enabled: false, provider: "", keyOwnerId: "" }); setAiKey(""); setNotice("AI configuration removed for this server."); }
+    catch (e) { setError(e.message || "Could not remove AI configuration."); } finally { setAiBusy(false); }
   }
 
   async function logout() {
@@ -162,8 +187,8 @@ export default function Home() {
             <div className="actions"><button className="primary" disabled={busy || !moderationForm.userId.trim()} onClick={runModeration}>{busy ? "Working…" : "Run moderation action"}</button></div>
             <p className="hint">Actions are sent to Discord immediately and may not be reversible.</p>
           </>}
-          {["Giveaways","Logs","Settings"].includes(active) && <div className="placeholder"><b>{active} actions are not wired up yet</b><p className="muted">This section is not presented as live until its handlers are implemented.</p></div>}
-          <div className="actions"><button className="secondary" onClick={() => window.location.reload()}>Reload saved values</button><button className="primary" disabled={!canSave} onClick={save}>{busy ? "Saving…" : "Save to Firebase"}</button></div>
+          {active === "Settings" && <><h3>AI Auto Moderation — Gemini / DeepSeek</h3><p className="muted">Each server manager adds their own provider key here. It is validated on the server, encrypted before Firestore storage, and never displayed again.</p><div className="stat"><small>SERVER AI STATUS</small><strong className={aiInfo.configured && aiInfo.enabled ? "good" : "warn"}>{aiInfo.configured && aiInfo.enabled ? "Configured · " + (aiInfo.provider === "gemini" ? "Gemini" : "DeepSeek") : "Not configured"}</strong><span>{aiInfo.configured ? "Saved key is hidden from the browser." : "No AI key is saved for this server."}</span></div><label className="fieldLabel">AI provider</label><select value={aiProvider} onChange={e => setAiProvider(e.target.value)}><option value="gemini">Google Gemini</option><option value="deepseek">DeepSeek</option></select><label className="fieldLabel">Your API key</label><input type="password" autoComplete="new-password" value={aiKey} onChange={e => setAiKey(e.target.value)} placeholder={aiInfo.configured ? "Saved key hidden — enter a new key to replace it" : "Paste your own API key"} maxLength={500}/><p className="hint">Official key pages: Google AI Studio or DeepSeek Platform. Authentication validation cannot guarantee credits or perfect security. Never paste keys into Discord chat or share them with members.</p><div className="actions"><button className="secondary" disabled={aiBusy || !aiInfo.configured} onClick={removeAiKey}>Remove saved key</button><button className="primary" disabled={aiBusy || aiKey.trim().length < 12} onClick={saveAiKey}>{aiBusy ? "Checking & encrypting…" : aiInfo.configured ? "Validate & replace key" : "Validate & save key"}</button></div><div className="sectionDivider"></div><p className="hint">Required: AI_KEY_ENCRYPTION_SECRET must be set to the same strong random secret on the dashboard host and bot host. AI classification sends relevant message text and saved rules to your selected AI provider.</p></>}{["Giveaways","Logs"].includes(active) && <div className="placeholder"><b>{active} actions are not wired up yet</b><p className="muted">This section is not presented as live until its handlers are implemented.</p></div>}
+          {active !== "Settings" && <div className="actions"><button className="secondary" onClick={() => window.location.reload()}>Reload saved values</button><button className="primary" disabled={!canSave} onClick={save}>{busy ? "Saving…" : "Save to Firebase"}</button></div>}
         </section>}
         <footer>THE DC BOT <span>Discord OAuth · Firestore-backed settings</span></footer>
       </div>
