@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-const sections = ["Overview", "Welcome & Goodbye", "Rules", "AutoMod", "Moderation", "Giveaways", "Logs", "Settings"];
+const sections = ["Overview", "Welcome & Goodbye", "Rules", "AutoMod", "Moderation", "Giveaways", "Chat Health", "Logs", "Settings"];
 
 export default function Home() {
   const [user, setUser] = useState(null);
@@ -29,6 +29,11 @@ export default function Home() {
   const [logsLoading, setLogsLoading] = useState(false);
   const [logsError, setLogsError] = useState("");
   const [logFilter, setLogFilter] = useState("all");
+  const [giveawayForm, setGiveawayForm] = useState({ channelId: "", prize: "", durationMinutes: 60 });
+  const [giveaways, setGiveaways] = useState([]);
+  const [giveawayBusy, setGiveawayBusy] = useState(false);
+  const [chatHealth, setChatHealth] = useState({ date: null, users: [] });
+  const [chatHealthBusy, setChatHealthBusy] = useState(false);
 
   const guild = guilds.find(g => g.id === guildId) || null;
   const canSave = Boolean(user && guild && !busy);
@@ -129,6 +134,26 @@ export default function Home() {
     finally { setBusy(false); }
   }
 
+  async function createGiveaway() {
+    if (!guildId || !giveawayForm.channelId || !giveawayForm.prize.trim() || giveawayBusy) return;
+    setGiveawayBusy(true); setNotice(""); setError("");
+    try {
+      const r = await fetch("/api/giveaways", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ guildId, ...giveawayForm }) });
+      const d = await r.json(); if (!r.ok) throw new Error(d.error || "Could not create giveaway.");
+      setNotice("Giveaway created and posted. ID: " + d.id); setGiveawayForm(p => ({ ...p, prize: "" })); await loadGiveaways();
+    } catch (e) { setError(e.message || "Could not create giveaway."); } finally { setGiveawayBusy(false); }
+  }
+  async function loadGiveaways() {
+    if (!guildId || !user) return;
+    const r = await fetch("/api/giveaways?guildId=" + encodeURIComponent(guildId), { cache: "no-store" });
+    const d = await r.json(); if (!r.ok) throw new Error(d.error || "Could not load giveaways."); setGiveaways(d.giveaways || []);
+  }
+  async function loadChatHealth() {
+    if (!guildId || !user) return; setChatHealthBusy(true);
+    try { const r = await fetch("/api/chat-health?guildId=" + encodeURIComponent(guildId), { cache: "no-store" }); const d = await r.json(); if (!r.ok) throw new Error(d.error || "Could not load Chat Health."); setChatHealth(d); }
+    catch (e) { setError(e.message || "Could not load Chat Health."); } finally { setChatHealthBusy(false); }
+  }
+
   async function saveAiKey() {
     if (!guildId || !aiKey.trim() || aiBusy) return;
     setAiBusy(true); setNotice(""); setError("");
@@ -141,6 +166,12 @@ export default function Home() {
     try { const r = await fetch("/api/ai?guildId=" + encodeURIComponent(guildId), { method: "DELETE" }); const d = await r.json(); if (!r.ok) throw new Error(d.error || "Could not remove AI configuration."); setAiInfo({ configured: false, enabled: false, provider: "", keyOwnerId: "" }); setAiKey(""); setNotice("AI configuration removed for this server."); }
     catch (e) { setError(e.message || "Could not remove AI configuration."); } finally { setAiBusy(false); }
   }
+
+  useEffect(() => {
+    if (!guildId || !user) return;
+    if (active === "Giveaways") loadGiveaways().catch(e => setError(e.message));
+    if (active === "Chat Health") loadChatHealth();
+  }, [guildId, user, active]);
 
   async function logout() {
     await fetch("/api/auth/session", { method: "DELETE" });
@@ -155,7 +186,7 @@ export default function Home() {
       <label className="label" htmlFor="server">YOUR SERVERS</label>
       {user && <select id="server" value={guildId} onChange={e => { setGuildId(e.target.value); setNotice(""); setError(""); }}><option value="">Select a server</option>{guilds.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select>}
       <div className="label navTitle">DASHBOARD</div>
-      <nav>{sections.map((s, i) => <button key={s} className={active === s ? "navItem active" : "navItem"} onClick={() => setActive(s)}><span>{["⌂","✦","☷","◇","⚑","✳","≡","⚙"][i]}</span>{s}</button>)}</nav>
+      <nav>{sections.map((s, i) => <button key={s} className={active === s ? "navItem active" : "navItem"} onClick={() => setActive(s)}><span>{["⌂","✦","☷","◇","⚑","✳","◷","≡","⚙"][i]}</span>{s}</button>)}</nav>
       <div className="profile"><span className="avatar">{initials}</span><span><b>{user?.username || "Not signed in"}</b><small>{user ? "Discord account connected" : "Sign in to continue"}</small></span></div>
     </aside>
     <section className="main">
@@ -177,7 +208,7 @@ export default function Home() {
             <article className="stat"><small>BOT CONNECTION</small><strong className="warn">{health.bot === "online" ? "Online" : "Not verified"}</strong><span>{health.bot === "online" ? "Heartbeat received" : "No live bot heartbeat configured"}</span></article>
           </div>
           <section className="panel"><div className="panelHeading"><div><h2>Server modules</h2><p className="muted">Open a section to edit and save its configuration.</p></div></div><div className="moduleGrid">{sections.slice(1,7).map(s => <button key={s} className="module" onClick={() => setActive(s)}><b>{s}</b><span>Open settings ↗</span></button>)}</div></section>
-          <section className="panel"><h2>Important</h2><p className="muted">Settings are saved per server in Firestore. A setting affects Discord behavior only when the bot has a corresponding handler implemented. Bot online status stays unverified until a heartbeat is added.</p></section>
+          <section className="panel"><h2>Connected features</h2><p className="muted">Welcome/goodbye, server rules, supported spam checks, moderation, persistent giveaways, member profiles, private parties, community missions, Q&A recaps, and Chat Health use the bot and Firestore. Some advanced per-rule detector types still need live enforcement handlers; configure and test in a private server before relying on them.</p></section>
         </>}
         {user && guild && active !== "Overview" && <section className="panel">
           <div className="panelHeading"><div><h2>{active} configuration</h2><p className="muted">Saved to Firebase for <b>{guild.name}</b>. This does not claim that every option is already enforced by the bot.</p></div><span className="tag">SERVER SETTINGS</span></div>
@@ -328,8 +359,23 @@ export default function Home() {
             <div className="logList">{modLogs.filter(l => logFilter==="all" || (logFilter==="ai" ? String(l.action||"").startsWith("ai_") || l.source==="ai" : logFilter==="timeout" ? String(l.action||"").includes("timeout") : logFilter==="warning" ? ["needs_review","warning"].includes(l.status) || String(l.action||"").includes("review") : l.action===logFilter)).map((l,i)=><article className="logEntry" key={l.id||i}><div className="logTop"><b>{l.action || (l.source==="ai" ? "AI review" : "Moderation event")}</b><span className="tag">{l.status || "logged"}</span></div><p>{l.reason || "No reason recorded"}</p><div className="logMeta"><span>Member: {l.username || l.userId || "—"}</span><span>Rule: {l.ruleId || "—"}</span><span>{l.createdAt ? new Date(l.createdAt).toLocaleString() : "Time unavailable"}</span></div></article>)} </div>
             <p className="hint">For privacy, this view does not expose other servers’ records. Message text is not shown unless the bot explicitly stores it.</p>
           </>}
-          {active === "Giveaways" && <div className="placeholder"><b>Giveaways are not wired up yet</b><p className="muted">This section is not presented as live until its handlers are implemented.</p></div>}
-          {active !== "Settings" && <div className="actions"><button className="secondary" onClick={() => window.location.reload()}>Reload saved values</button><button className="primary" disabled={!canSave} onClick={save}>{busy ? "Saving…" : "Save to Firebase"}</button></div>}
+          {active === "Giveaways" && <>
+            <h3>Create a persistent giveaway</h3>
+            <p className="hint">The bot stores the absolute end timestamp in Firestore. If the bot restarts or is offline, the end time does not reset; the result is processed after the bot returns.</p>
+            <label className="fieldLabel">Announcement channel</label>
+            <select value={giveawayForm.channelId} onChange={e => setGiveawayForm(p => ({...p, channelId:e.target.value}))}><option value="">Choose a text channel</option>{channels.map(ch => <option key={ch.id} value={ch.id}>#{ch.name}</option>)}</select>
+            <label className="fieldLabel">Prize</label><input value={giveawayForm.prize} maxLength={150} onChange={e => setGiveawayForm(p => ({...p, prize:e.target.value}))} placeholder="Example: game gift card"/>
+            <label className="fieldLabel">Duration (minutes, 1–10080)</label><input type="number" min="1" max="10080" value={giveawayForm.durationMinutes} onChange={e => setGiveawayForm(p => ({...p, durationMinutes:Number(e.target.value)}))}/>
+            <div className="actions"><button className="secondary" onClick={() => loadGiveaways().catch(e => setError(e.message))}>Refresh list</button><button className="primary" disabled={giveawayBusy || !giveawayForm.channelId || !giveawayForm.prize.trim()} onClick={createGiveaway}>{giveawayBusy ? "Creating…" : "Create & announce giveaway"}</button></div>
+            <div className="sectionDivider"></div><div className="panelHeading"><div><h3>Saved giveaways</h3><p className="hint">Up to 50 recent records from this server.</p></div></div>
+            {!giveaways.length ? <div className="placeholder"><b>No saved giveaways</b><p className="muted">Create a giveaway above or use the giveaway-create command in Discord.</p></div> : <div className="logList">{giveaways.map(g => <article className="logEntry" key={g.id}><div className="logTop"><b>{g.prize}</b><span className="tag">{g.status}</span></div><p>Entries: {g.participantCount} · Channel: {g.channelId ? "#" + (channels.find(c => c.id === g.channelId)?.name || g.channelId) : "—"}</p><div className="logMeta"><span>ID: {g.id}</span><span>{g.endsAt ? (g.status === "active" ? "Ends " : "Ended ") + new Date(g.endsAt).toLocaleString() : "End time unavailable"}</span><span>{g.winnerId ? "Winner: " + g.winnerId : ""}</span></div></article>)}</div>}
+          </>}
+          {active === "Chat Health" && <>
+            <div className="panelHeading"><div><h3>Chat Health Monitor</h3><p className="muted">Daily Firestore snapshots; the bot retains the newest seven snapshots per server.</p></div><button className="secondary" disabled={chatHealthBusy} onClick={loadChatHealth}>{chatHealthBusy ? "Loading…" : "Refresh analytics"}</button></div>
+            <div className="stats"><article className="stat"><small>LATEST SNAPSHOT</small><strong>{chatHealth.date || "Not available"}</strong><span>Latest saved daily snapshot</span></article><article className="stat"><small>TRACKED MEMBERS</small><strong>{chatHealth.users?.length || 0}</strong><span>Members in latest snapshot</span></article><article className="stat"><small>RETENTION</small><strong>7 days</strong><span>Oldest daily snapshot is removed first</span></article><article className="stat"><small>LIVE COMMAND</small><strong>/chat-health</strong><span>Moderator-only summary in Discord</span></article></div>
+            {!chatHealth.users?.length ? <div className="placeholder"><b>No chat-health snapshot yet</b><p className="muted">The bot needs to run and record messages before the first snapshot is available. Check bot status and refresh later.</p></div> : <div className="logList">{chatHealth.users.map((u,i) => <article className="logEntry" key={u.userId}><div className="logTop"><b>{i+1}. {u.userId}</b><span className="tag">{u.messages7d} messages / 7 days</span></div><div className="logMeta"><span>Active days: {u.activeDays}</span><span>Last message: {u.lastMessageAt ? new Date(u.lastMessageAt).toLocaleString() : "—"}</span></div></article>)}</div>}
+          </>}
+          {active !== "Settings" && active !== "Giveaways" && active !== "Chat Health" && <div className="actions"><button className="secondary" onClick={() => window.location.reload()}>Reload saved values</button><button className="primary" disabled={!canSave} onClick={save}>{busy ? "Saving…" : "Save to Firebase"}</button></div>}
         </section>}
         <footer>THE DC BOT <span>Discord OAuth · Firestore-backed settings</span></footer>
       </div>
