@@ -42,7 +42,7 @@ function inspectMessage(message, rules = [], spamConfig = {}, rulePolicies = {})
   const upper = content.replace(/[^A-Za-z]/g, "");
   const capsRatio = upper.length ? (upper.match(/[A-Z]/g) || []).length / upper.length : 0;
   const emojiCount = (content.match(/[\p{Extended_Pictographic}]/gu) || []).length;
-  const current = { time: now, content: normalized, isLink, isInvite, mentions: (message.mentions?.users?.size || 0) + (message.mentions?.roles?.size || 0), everyone: /@everyone|@here/.test(content), attachments: message.attachments?.size || 0, capsRatio, emojiCount };
+  const current = { time: now, content: normalized, isLink, isInvite, mentions: (message.mentions?.users?.size || 0) + (message.mentions?.roles?.size || 0), everyone: /@everyone|@here/.test(content), attachments: message.attachments?.size || 0, stickers: message.stickers?.size || 0, capsRatio, emojiCount };
   history.push(current);
   if (history.length > 200) history.splice(0, history.length - 200);
   recentMessages.set(key, history);
@@ -100,6 +100,10 @@ function inspectMessage(message, rules = [], spamConfig = {}, rulePolicies = {})
       const emojis = window.reduce((sum, item) => sum + item.emojiCount, 0);
       matched = current.emojiCount > 0 && emojis >= limit;
       reason = "Emoji spam: " + emojis + " emoji within " + windowSeconds + " seconds";
+    } else if (kind === "sticker_spam") {
+      const stickers = window.reduce((sum, item) => sum + Number(item.stickers || 0), 0);
+      matched = current.stickers > 0 && stickers >= limit;
+      reason = "Sticker spam: " + stickers + " stickers within " + windowSeconds + " seconds";
     } else if (["advertising","links"].includes(kind)) {
       matched = isLink && !detectPromotionChannel(message.channel);
       reason = "Possible promotion outside an allowed promotion channel";
