@@ -195,8 +195,8 @@ async function saveCompanionQuestion({ guildId, userId, question, answer }) {
 }
 
 async function getCompanionRecap(guildId, userId) {
-  const snap = await getDb().collection("companionQuestions").where("guildId", "==", guildId).where("userId", "==", userId).limit(100).get();
-  return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(d => d.status === "active" && (d.expiresAt?.toDate ? d.expiresAt.toDate().getTime() : Date.parse(d.expiresAt)) > Date.now()).sort((a,b) => (b.createdAt?.toDate ? b.createdAt.toDate().getTime() : 0) - (a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0)).slice(0, 10);
+  const snap = await getDb().collection("companionQuestions").where("guildId", "==", guildId).limit(500).get();
+  return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(d => d.userId === userId && d.status === "active" && (d.expiresAt?.toDate ? d.expiresAt.toDate().getTime() : Date.parse(d.expiresAt)) > Date.now()).sort((a,b) => (b.createdAt?.toDate ? b.createdAt.toDate().getTime() : 0) - (a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0)).slice(0, 10);
 }
 
 async function runCommunityMaintenance(client) {
@@ -223,7 +223,7 @@ async function runCommunityMaintenance(client) {
   const qna = await db.collection("companionQuestions").where("status", "==", "active").limit(300).get().catch(() => null);
   if (qna) for (const doc of qna.docs) {
     const expiry = doc.data().expiresAt?.toDate ? doc.data().expiresAt.toDate().getTime() : Date.parse(doc.data().expiresAt || "");
-    if (Number.isFinite(expiry) && expiry <= Date.now()) await doc.ref.update({ status: "expired" }).catch(() => {});
+    if (Number.isFinite(expiry) && expiry <= Date.now()) await doc.ref.delete().catch(() => {});
   }
   for (const guild of client.guilds.cache.values()) {
     const today = new Date().toISOString().slice(0, 10);
