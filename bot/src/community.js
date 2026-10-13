@@ -179,4 +179,38 @@ async function getCompanionRecap(guildId, userId) {
   return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(d => d.status === "active" && (d.expiresAt?.toDate ? d.expiresAt.toDate().getTime() : Date.parse(d.expiresAt)) > Date.now()).sort((a,b) => (b.createdAt?.toDate ? b.createdAt.toDate().getTime() : 0) - (a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0)).slice(0, 10);
 }
 
-module.exports = { getProfile, changeReputation, createParty, findParty, joinParty, leaveParty, closeParty, createMission, missionProgress, listActiveMissions, recordChatHealth, snapshotChatHealth, saveCompanionQuestion, getCompanionRecap };
+async function runCommunityMaintenance(client) {
+  const db = getDb();
+  const parties = await db.collection("parties").where("status", "==", "active").limit(300).get().catch(() => null);
+  if (parties) for (const doc of parties.docs) {
+    const data = doc.data();
+    const expiry = data.expiresAt?.toDate ? data.expiresAt.toDate().getTime() : Date.parse(data.expiresAt || "");
+    if (!Number.isFinite(expiry) || expiry > Date.now()) continue;
+    await doc.ref.update({ status: "expired", closedAt: now() }).catch(() => {});
+    const guild = await client.guilds.fetch(data.guildId).catch(() => null);
+    const channel = guild && await guild.channels.fetch(data.channelId).catch(() => null);
+    if (channel) await channel.delete("Temporary party expired").catch(() => {});
+  }
+  const qna = await db.collection("companionQuestions").where("status", "==", "active").limit(300).get().catch(() => null);
+  if (qna) for (const doc of qna.docs) {
+    const expiry = doc.data().expiresAt?.toDate ? doc.data().expiresAt.toDate().getTime() : Date.parse(doc.data().expiresAt || "");
+    if (Number.isFinite(expiry) && expiry <= Date.now()) await doc.ref.update({ status: "expired" }).catch(() => {});
+  }
+  const guilds = await db.collection("guildSettings").limit(200).get().catch(() => null);
+  if (guilds) for (const doc of guilds.docs) {
+    const today = new Date().toISOString().slice(0, 10);
+    const snapRef = db.collection("chatHealthSnapshots").doc(doc.id + "_" + today);
+    const exists = await snapRef.get().catch(() => null);
+    if (!exists?.exists) await snapshotChatHealth(doc.id).catch(error => console.error("Chat health snapshot failed:", error.message));
+  }
+}
+
+function startCommunityWorkers(client) {
+  if (global.__theDcCommunityWorker) return;
+  const run = () => runCommunityMaintenance(client).catch(error => console.error("Community maintenance failed:", error.message));
+  run();
+  global.__theDcCommunityWorker = setInterval(run, 5 * 60 * 1000);
+  if (typeof global.__theDcCommunityWorker.unref === "function") global.__theDcCommunityWorker.unref();
+}
+
+module.exports = { getProfile, changeReputation, createParty, findParty, joinParty, leaveParty, closeParty, createMission, missionProgress, listActiveMissions, recordChatHealth, snapshotChatHealth, saveCompanionQuestion, getCompanionRecap, startCommunityWorkers, runCommunityMaintenance };
