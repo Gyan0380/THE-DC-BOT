@@ -4,7 +4,7 @@ Discord community bot starter with Firebase Cloud Firestore persistence, configu
 
 ## Current status
 
-This is an evolving implementation; test in a private Discord server first. Implemented modules include welcome/goodbye, configurable text-rule checks, slash-command and dashboard moderation, persistent timeout/temporary-ban recovery, giveaway creation/join/winner selection, member profiles and reputation, moderation points, private parties, community missions, Smart Chat Companion Q&A recap, and Chat Health snapshots. Some advanced detector types still use conservative signal matching and require private-server testing before being relied on.
+This is an evolving implementation; test in a private Discord server first. Implemented modules include welcome/goodbye, configurable text-rule checks, slash-command and dashboard moderation, persistent timeout/temporary-ban recovery, retryable giveaway result announcements, member profiles and reputation announcements, moderation points, private parties with working activity tracking, community missions, Smart Chat Companion Q&A recap, and Chat Health snapshots. Text-rule detectors include rapid/repeated messages, links/invites, mentions, emoji/sticker/attachment spam, caps, character floods, promotion signals, and configurable blacklist phrases. Voice rules cannot infer spoken content; test rules in a private server before relying on them.
 
 ## Structure
 
