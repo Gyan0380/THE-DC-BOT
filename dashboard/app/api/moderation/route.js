@@ -44,6 +44,18 @@ export async function POST(request) {
   } else {
     return NextResponse.json({ error: "Unsupported moderation action." }, { status: 400 });
   }
+  let timerRef = null;
+  if (action === "timeout" || (action === "ban" && durationHours != null && durationHours !== "")) {
+    try {
+      const firestore = db();
+      if (!firestore) throw new Error("Firebase Admin credentials are not configured.");
+      const timerAction = action === "timeout" ? "timeout-expire" : "unban";
+      const executeAt = action === "timeout" ? new Date(Date.now() + Number(minutes) * 60000) : new Date(Date.now() + Number(durationHours) * 3600000);
+      timerRef = await firestore.collection("scheduledActions").add({ guildId, userId, action: timerAction, executeAt, moderatorId: session.user?.id || "dashboard", reason: why, status: "pending", createdAt: new Date(), attempts: 0, lastError: null });
+    } catch (error) {
+      return NextResponse.json({ error: "Could not save the persistent timer, so no moderation action was applied. " + error.message }, { status: 503 });
+    }
+  }
   try {
     const response = await fetch(url, {
       method,
@@ -52,23 +64,22 @@ export async function POST(request) {
       cache: "no-store"
     });
     if (!response.ok) {
+      if (timerRef) await timerRef.update({ status: "cancelled", cancelledAt: new Date(), lastError: "Discord rejected the moderation action" }).catch(() => {});
       const data = await response.json().catch(() => ({}));
       const message = response.status === 403 ? "Discord denied this action. Check the bot's permissions and role hierarchy." :
         response.status === 404 ? "Member or server not found, or the bot is not in this server." :
         (data.message || "Discord moderation action failed.");
       return NextResponse.json({ error: message }, { status: response.status });
     }
-    try {
-      const firestore = db();
-      if (firestore && action === "timeout") {
-        await firestore.collection("scheduledActions").add({ guildId, userId, action: "timeout-expire", executeAt: new Date(Date.now() + Number(minutes) * 60000), moderatorId: session.user?.id || "dashboard", reason: why, status: "pending", createdAt: new Date(), attempts: 0, lastError: null });
-      } else if (firestore && action === "untimeout") {
-        const pending = await firestore.collection("scheduledActions").where("status", "==", "pending").get();
-        await Promise.all(pending.docs.filter(d => d.data().guildId === guildId && d.data().userId === userId && d.data().action === "timeout-expire").map(d => d.ref.update({ status: "cancelled", cancelledAt: new Date() })));
-      } else if (firestore && action === "ban" && durationHours != null && durationHours !== "") {
-        await firestore.collection("scheduledActions").add({ guildId, userId, action: "unban", executeAt: new Date(Date.now() + Number(durationHours) * 3600000), moderatorId: session.user?.id || "dashboard", reason: why, status: "pending", createdAt: new Date(), attempts: 0, lastError: null });
-      }
-    } catch (error) { console.error("Could not persist dashboard punishment timer:", error.message); }
+    if (action === "untimeout") {
+      try {
+        const firestore = db();
+        if (firestore) {
+          const pending = await firestore.collection("scheduledActions").where("status", "==", "pending").get();
+          await Promise.all(pending.docs.filter(d => d.data().guildId === guildId && d.data().userId === userId && d.data().action === "timeout-expire").map(d => d.ref.update({ status: "cancelled", cancelledAt: new Date() })));
+        }
+      } catch (error) { console.error("Could not cancel dashboard timeout timer:", error.message); }
+    }
     let dmSent = false;
     try {
       const dmChannelResponse = await fetch("https://discord.com/api/v10/users/@me/channels", {
