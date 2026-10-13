@@ -59,6 +59,8 @@ async function createParty({ guild, owner, name, description, maxMembers, tempor
     memberIds: [owner.id], status: "active", temporary: Boolean(expiresAt), expiresAt,
     lastActiveAt: now(), createdAt: now()
   });
+  // touchParty reads the ID from the channel topic; persist it after Firestore assigns the ID.
+  await channel.setTopic("Party ID: " + ref.id + " | " + (safeText(description, 850) || "Private party channel managed by THE DC BOT")).catch(error => console.warn("Could not set party channel topic:", error.message));
   return { id: ref.id, channel, expiresAt };
 }
 
