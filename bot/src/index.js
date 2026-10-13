@@ -288,8 +288,9 @@ client.on(Events.InteractionCreate, async interaction => {
       const minutes = interaction.options.getInteger("minutes", true);
       const reason = interaction.options.getString("reason") || "No reason provided";
       if (!target.moderatable || target.id === interaction.user.id) { await interaction.reply({ content: "I cannot timeout that member. Check role hierarchy and permissions.", ephemeral: true }); return; }
-      await target.timeout(minutes * 60 * 1000, reason);
-      await scheduleAction({ guildId: interaction.guildId, userId: target.id, action: "timeout-expire", executeAt: new Date(Date.now() + minutes * 60000), moderatorId: interaction.user.id, reason });
+      const timerId = await scheduleAction({ guildId: interaction.guildId, userId: target.id, action: "timeout-expire", executeAt: new Date(Date.now() + minutes * 60000), moderatorId: interaction.user.id, reason });
+      try { await target.timeout(minutes * 60 * 1000, reason); }
+      catch (error) { await getDb().collection("scheduledActions").doc(timerId).update({ status: "cancelled", cancelledAt: new Date(), lastError: "Timeout application failed" }).catch(() => {}); throw error; }
       const dmSent = await dmMember(target.user, interaction.guild, interaction.user, "timeout", reason, minutes + " minute(s)");
       await sendModLog(interaction.guild, { action: "timeout", userId: target.id, username: target.user.tag, moderatorId: interaction.user.id, moderatorName: interaction.user.tag, reason, durationMinutes: minutes, dmSent, status: "completed" });
       await interaction.reply({ content: "Timed out " + target.user.tag + " for " + minutes + " minute(s). Reason: " + reason + "\n" + (dmSent ? "✅ DM notification sent." : "⚠️ Timeout applied, but DM could not be delivered (the member may have DMs disabled or blocked the bot)."), ephemeral: true });
@@ -317,11 +318,10 @@ client.on(Events.InteractionCreate, async interaction => {
       if (command === "kick") {
         await target.kick(reason);
       } else {
-        await target.ban({ reason });
         const durationHours = interaction.options.getInteger("duration_hours");
-        if (durationHours) {
-          await scheduleAction({ guildId: interaction.guildId, userId: target.id, action: "unban", executeAt: new Date(Date.now() + durationHours * 3600000), moderatorId: interaction.user.id, reason });
-        }
+        const timerId = durationHours ? await scheduleAction({ guildId: interaction.guildId, userId: target.id, action: "unban", executeAt: new Date(Date.now() + durationHours * 3600000), moderatorId: interaction.user.id, reason }) : null;
+        try { await target.ban({ reason }); }
+        catch (error) { if (timerId) await getDb().collection("scheduledActions").doc(timerId).update({ status: "cancelled", cancelledAt: new Date(), lastError: "Ban application failed" }).catch(() => {}); throw error; }
       }
       const durationHours = command === "ban" ? interaction.options.getInteger("duration_hours") : null;
       const dmSent = command === "ban"
