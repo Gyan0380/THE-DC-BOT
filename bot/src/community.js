@@ -25,6 +25,16 @@ async function changeReputation({ guildId, userId, moderatorId, amount, reason }
   return getProfile(guildId, userId);
 }
 
+async function addModerationPoints({ guildId, userId, moderatorId, amount, reason }) {
+  const n = Number(amount);
+  if (!Number.isInteger(n) || n < 1 || n > 100) throw new Error("Points must be an integer from 1 to 100.");
+  const db = getDb(), ref = db.collection("memberProfiles").doc(guildId + "_" + userId);
+  await ref.set({ guildId, userId, moderationPoints: require("firebase-admin/firestore").FieldValue.increment(n), updatedAt: now() }, { merge: true });
+  await db.collection("moderationPointsEvents").add({ guildId, userId, moderatorId, amount: n, reason: safeText(reason, 500), createdAt: now() });
+  const snap = await ref.get();
+  return Number(snap.data()?.moderationPoints || 0);
+}
+
 async function createParty({ guild, owner, name, description, maxMembers, temporaryMinutes }) {
   const db = getDb();
   const settingsSnap = await db.collection("guildSettings").doc(guild.id).get();
@@ -213,4 +223,4 @@ function startCommunityWorkers(client) {
   if (typeof global.__theDcCommunityWorker.unref === "function") global.__theDcCommunityWorker.unref();
 }
 
-module.exports = { getProfile, changeReputation, createParty, findParty, joinParty, leaveParty, closeParty, createMission, missionProgress, listActiveMissions, recordChatHealth, snapshotChatHealth, saveCompanionQuestion, getCompanionRecap, startCommunityWorkers, runCommunityMaintenance };
+module.exports = { getProfile, changeReputation, addModerationPoints, createParty, findParty, joinParty, leaveParty, closeParty, createMission, missionProgress, listActiveMissions, recordChatHealth, snapshotChatHealth, saveCompanionQuestion, getCompanionRecap, startCommunityWorkers, runCommunityMaintenance };
