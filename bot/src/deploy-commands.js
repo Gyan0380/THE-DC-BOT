@@ -38,8 +38,7 @@ const commands = [
     .setDefaultMemberPermissions(PermissionFlagsBits.BanMembers)
     .addUserOption(o => o.setName("user").setDescription("Member to ban").setRequired(true))
     .addStringOption(o => o.setName("reason").setDescription("Reason for ban").setMaxLength(500))
-    .addIntegerOption(o => o.setName("duration_hours").setDescription("Optional temporary ban duration in hours (1-8760); omit for permanent").setMinValue(1).setMaxValue(8760))
-
+    .addIntegerOption(o => o.setName("duration_hours").setDescription("Optional temporary ban duration in hours (1-8760); omit for permanent").setMinValue(1).setMaxValue(8760)),
   new SlashCommandBuilder().setName("giveaway-create").setDescription("Start a persistent giveaway")
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .addStringOption(o => o.setName("prize").setDescription("Giveaway prize").setRequired(true).setMaxLength(150))
