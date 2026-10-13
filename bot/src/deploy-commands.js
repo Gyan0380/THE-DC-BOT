@@ -34,10 +34,11 @@ const commands = [
     .setDefaultMemberPermissions(PermissionFlagsBits.KickMembers)
     .addUserOption(o => o.setName("user").setDescription("Member to kick").setRequired(true))
     .addStringOption(o => o.setName("reason").setDescription("Reason for kick").setMaxLength(500)),
-  new SlashCommandBuilder().setName("ban").setDescription("Ban a member")
+  new SlashCommandBuilder().setName("ban").setDescription("Ban a member, optionally for a fixed duration")
     .setDefaultMemberPermissions(PermissionFlagsBits.BanMembers)
     .addUserOption(o => o.setName("user").setDescription("Member to ban").setRequired(true))
     .addStringOption(o => o.setName("reason").setDescription("Reason for ban").setMaxLength(500))
+    .addIntegerOption(o => o.setName("duration_hours").setDescription("Optional temporary ban duration in hours (1-8760); omit for permanent").setMinValue(1).setMaxValue(8760))
 ];
 
 async function registerCommands() {
