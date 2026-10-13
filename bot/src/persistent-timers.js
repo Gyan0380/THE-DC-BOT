@@ -104,11 +104,11 @@ async function processDueActions(client) {
   }
 }
 
-async function cancelScheduledActions({ guildId, userId, action }) {
+async function cancelScheduledActions({ guildId, userId, action, excludeId }) {
   const snapshot = await getDb().collection(COLLECTION).where("status", "==", "pending").get();
   const matches = snapshot.docs.filter(doc => {
     const d = doc.data();
-    return d.guildId === guildId && d.userId === userId && (!action || d.action === action);
+    return doc.id !== excludeId && d.guildId === guildId && d.userId === userId && (!action || d.action === action);
   });
   await Promise.all(matches.map(doc => doc.ref.update({ status: "cancelled", cancelledAt: new Date() })));
   return matches.length;
