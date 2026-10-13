@@ -19,7 +19,7 @@ async function createGiveaway({ guildId, channelId, prize, durationMs, createdBy
 }
 
 async function getDueGiveaways(now = new Date()) {
-  const snapshot = await getDb().collection("giveaways").where("status", "==", "active").limit(500).get();
+  const snapshot = await getDb().collection("giveaways").where("status", "==", "active").get();
   return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(item => {
     const end = item.endsAt?.toDate ? item.endsAt.toDate() : new Date(item.endsAt);
     return Number.isFinite(end.getTime()) && end <= now;
