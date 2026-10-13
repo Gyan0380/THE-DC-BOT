@@ -104,6 +104,16 @@ async function processDueActions(client) {
   }
 }
 
+async function cancelScheduledActions({ guildId, userId, action }) {
+  const snapshot = await getDb().collection(COLLECTION).where("status", "==", "pending").limit(500).get();
+  const matches = snapshot.docs.filter(doc => {
+    const d = doc.data();
+    return d.guildId === guildId && d.userId === userId && (!action || d.action === action);
+  });
+  await Promise.all(matches.map(doc => doc.ref.update({ status: "cancelled", cancelledAt: new Date() })));
+  return matches.length;
+}
+
 function startPersistentTimers(client) {
   if (runner) return;
   // Recover stale claims left by a hard restart, without deleting historical records.
@@ -117,4 +127,4 @@ function startPersistentTimers(client) {
   if (typeof runner.unref === "function") runner.unref();
 }
 
-module.exports = { scheduleAction, processDueActions, startPersistentTimers };
+module.exports = { scheduleAction, cancelScheduledActions, processDueActions, startPersistentTimers };
