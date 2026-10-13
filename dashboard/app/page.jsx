@@ -14,6 +14,8 @@ export default function Home() {
   const [channels, setChannels] = useState([]);
   const [channelError, setChannelError] = useState("");
   const [moderationForm, setModerationForm] = useState({ action: "timeout", userId: "", minutes: 10, reason: "" });
+  const [pointsForm, setPointsForm] = useState({ userId: "", amount: 1, reason: "" });
+  const [pointsBusy, setPointsBusy] = useState(false);
   const [settings, setSettings] = useState({ welcome: { enabled: false, channelId: "", message: "Welcome {user} to {server}!" }, goodbye: { enabled: false, channelId: "", message: "Goodbye {user}!" }, rules: [], automod: { enabled: false, autoTimeoutMinutes: 0 }, spamDetection: { messages: 5, windowSeconds: 6, repeats: 4, repeatWindowSeconds: 15 }, moderation: {}, giveaways: {}, logs: {} });
   const [rulesText, setRulesText] = useState("");
   const [ruleSearch, setRuleSearch] = useState("");
@@ -132,6 +134,17 @@ export default function Home() {
       setNotice("Settings saved to Firebase for this server. Bot behavior only changes where the bot has a matching live handler.");
     } catch (e) { setError(e.message || "Could not save settings."); }
     finally { setBusy(false); }
+  }
+
+  async function addPoints() {
+    if (!guildId || !pointsForm.userId.trim() || !pointsForm.reason.trim() || pointsBusy) return;
+    setPointsBusy(true); setNotice(""); setError("");
+    try {
+      const r = await fetch("/api/points", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ guildId, ...pointsForm }) });
+      const d = await r.json(); if (!r.ok) throw new Error(d.error || "Could not add points.");
+      setNotice("Added " + pointsForm.amount + " moderation point(s). New total: " + d.total + ".");
+      setPointsForm(p => ({ ...p, reason: "" }));
+    } catch (e) { setError(e.message || "Could not add points."); } finally { setPointsBusy(false); }
   }
 
   async function createGiveaway() {
@@ -350,6 +363,12 @@ export default function Home() {
             <label className="fieldLabel">Reason</label><textarea rows={3} value={moderationForm.reason} onChange={e => setModerationForm(p => ({...p, reason:e.target.value}))} placeholder="Reason for this action"/>
             <div className="actions"><button className="primary" disabled={busy || !moderationForm.userId.trim()} onClick={runModeration}>{busy ? "Working…" : "Run moderation action"}</button></div>
             <p className="hint">Actions are sent to Discord immediately and may not be reversible.</p>
+            <div className="sectionDivider"></div><h3>One-click moderation points</h3>
+            <p className="hint">Points are stored in Firestore and appear on the member profile. Use this for manual point additions; configured rule violations also add their saved point value automatically.</p>
+            <label className="fieldLabel">Member ID</label><input value={pointsForm.userId} onChange={e => setPointsForm(p => ({...p, userId:e.target.value}))} placeholder="Discord user ID"/>
+            <label className="fieldLabel">Points to add (1–100)</label><input type="number" min="1" max="100" value={pointsForm.amount} onChange={e => setPointsForm(p => ({...p, amount:Number(e.target.value)}))}/>
+            <label className="fieldLabel">Reason</label><textarea rows={2} value={pointsForm.reason} onChange={e => setPointsForm(p => ({...p, reason:e.target.value}))} placeholder="Reason for adding points"/>
+            <div className="actions"><button className="primary" disabled={pointsBusy || !pointsForm.userId.trim() || !pointsForm.reason.trim()} onClick={addPoints}>{pointsBusy ? "Saving…" : "Add points now"}</button></div>
           </>}
           {active === "Settings" && <><h3>AI Auto Moderation — Gemini / DeepSeek</h3><p className="muted">Each server manager adds their own provider key here. It is validated on the server, encrypted before Firestore storage, and never displayed again.</p><div className="stat"><small>SERVER AI STATUS</small><strong className={aiInfo.configured && aiInfo.enabled ? "good" : "warn"}>{aiInfo.configured && aiInfo.enabled ? "Configured · " + (aiInfo.provider === "gemini" ? "Gemini" : "DeepSeek") : "Not configured"}</strong><span>{aiInfo.configured ? "Saved key is hidden from the browser." : "No AI key is saved for this server."}</span></div><label className="fieldLabel">AI provider</label><select value={aiProvider} onChange={e => setAiProvider(e.target.value)}><option value="gemini">Google Gemini</option><option value="deepseek">DeepSeek</option></select><label className="fieldLabel">Your API key</label><input type="password" autoComplete="new-password" value={aiKey} onChange={e => setAiKey(e.target.value)} placeholder={aiInfo.configured ? "Saved key hidden — enter a new key to replace it" : "Paste your own API key"} maxLength={500}/><p className="hint">Official key pages: Google AI Studio or DeepSeek Platform. Authentication validation cannot guarantee credits or perfect security. Never paste keys into Discord chat or share them with members.</p><div className="actions"><button className="secondary" disabled={aiBusy || !aiInfo.configured} onClick={removeAiKey}>Remove saved key</button><button className="primary" disabled={aiBusy || aiKey.trim().length < 12} onClick={saveAiKey}>{aiBusy ? "Checking & encrypting…" : aiInfo.configured ? "Validate & replace key" : "Validate & save key"}</button></div><div className="sectionDivider"></div><p className="hint">Required: AI_KEY_ENCRYPTION_SECRET must be set to the same strong random secret on the dashboard host and bot host. AI classification sends relevant message text and saved rules to your selected AI provider.</p></>}{active === "Logs" && <>
             <div className="panelHeading"><div><h2>Moderation history</h2><p className="muted">Only records belonging to {guild.name} are shown. Data is filtered server-side by this server ID.</p></div><button className="secondary" onClick={() => { setLogsError(""); setLogsLoading(true); fetch("/api/logs?guildId=" + encodeURIComponent(guildId), {cache:"no-store"}).then(async r=>{const d=await r.json();if(!r.ok)throw new Error(d.error||"Could not load logs.");setModLogs(d.logs||[]);}).catch(e=>setLogsError(e.message)).finally(()=>setLogsLoading(false)); }}>Refresh logs</button></div>
