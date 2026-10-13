@@ -50,24 +50,41 @@ async function joinGiveaway(id, guildId, userId) {
 }
 
 async function processDueGiveaways(client) {
+  const db = getDb();
   const due = await getDueGiveaways(new Date()).catch(error => { console.error("Giveaway scan failed:", error.message); return []; });
   for (const giveaway of due) {
-    const ref = getDb().collection("giveaways").doc(giveaway.id);
+    const ref = db.collection("giveaways").doc(giveaway.id);
     const winnerId = Array.isArray(giveaway.participantIds) && giveaway.participantIds.length
       ? giveaway.participantIds[Math.floor(Math.random() * giveaway.participantIds.length)] : null;
-    const won = await getDb().runTransaction(async tx => {
+    const claimed = await db.runTransaction(async tx => {
       const fresh = await tx.get(ref);
       if (!fresh.exists || fresh.data().status !== "active") return false;
-      tx.update(ref, { status: "ended", winnerId, endedAt: new Date() });
+      tx.update(ref, { status: "ended", winnerId, endedAt: new Date(), announcementStatus: "pending" });
       return true;
-    }).catch(() => false);
-    if (!won) continue;
+    }).catch(error => { console.error("Could not finalize giveaway:", error.message); return false; });
+    if (!claimed) continue;
+  }
+
+  // A failed send leaves a durable pending announcement which is retried after restart.
+  const pending = await db.collection("giveaways").where("announcementStatus", "==", "pending").get()
+    .catch(error => { console.error("Giveaway announcement scan failed:", error.message); return null; });
+  if (!pending) return;
+  for (const doc of pending.docs) {
+    const giveaway = { id: doc.id, ...doc.data() };
     const channel = await client.channels.fetch(giveaway.channelId).catch(() => null);
-    if (channel?.isTextBased()) {
-      await channel.send({ content: winnerId
-        ? "🎉 Giveaway ended! Prize: **" + String(giveaway.prize || "Prize").slice(0, 150) + "**\nWinner: <@" + winnerId + ">\nGiveaway ID: `" + giveaway.id + "`"
-        : "Giveaway ended with no entries. Prize: **" + String(giveaway.prize || "Prize").slice(0, 150) + "**\nGiveaway ID: `" + giveaway.id + "`"
-      }).catch(error => console.error("Could not announce giveaway result:", error.message));
+    if (!channel?.isTextBased()) {
+      await doc.ref.update({ announcementAttempts: require("firebase-admin/firestore").FieldValue.increment(1), lastAnnouncementError: "Announcement channel unavailable" }).catch(() => {});
+      continue;
+    }
+    const content = giveaway.winnerId
+      ? "🎉 Giveaway ended! Prize: **" + String(giveaway.prize || "Prize").slice(0, 150) + "**\\nWinner: <@" + giveaway.winnerId + ">\\nGiveaway ID: `" + giveaway.id + "`"
+      : "Giveaway ended with no entries. Prize: **" + String(giveaway.prize || "Prize").slice(0, 150) + "**\\nGiveaway ID: `" + giveaway.id + "`";
+    try {
+      await channel.send({ content });
+      await doc.ref.update({ announcementStatus: "sent", announcementSentAt: new Date(), announcementAttempts: require("firebase-admin/firestore").FieldValue.increment(1), lastAnnouncementError: null });
+    } catch (error) {
+      await doc.ref.update({ announcementAttempts: require("firebase-admin/firestore").FieldValue.increment(1), lastAnnouncementError: String(error.message || error).slice(0, 500) }).catch(() => {});
+      console.error("Could not announce giveaway result; will retry:", error.message);
     }
   }
 }
