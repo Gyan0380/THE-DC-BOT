@@ -7,7 +7,7 @@ const { getGuildSettings, patchGuildSettings } = require("./guild-settings");
 const { inspectMessage, saveReview } = require("./moderation");
 const { PROVIDERS, getProviderConfig, validateApiKey, classifyMessage, shouldInspectWithAi } = require("./ai-provider");
 const { encryptApiKey, decryptApiKey } = require("./ai-key-vault");
-const { scheduleAction, startPersistentTimers } = require("./persistent-timers");
+const { scheduleAction, cancelScheduledActions, startPersistentTimers } = require("./persistent-timers");
 const { createGiveaway, joinGiveaway, startGiveawayWorker } = require("./giveaways");
 const { getProfile, changeReputation, addModerationPoints, createParty, joinParty, leaveParty, closeParty, createMission, missionProgress, listActiveMissions, recordChatHealth, snapshotChatHealth, saveCompanionQuestion, getCompanionRecap, startCommunityWorkers } = require("./community");
 const { openWelcomePanel, openPunishPanel, handlePanelInteraction, dmMember, logAction, dashUrl } = require("./panels");
@@ -301,6 +301,7 @@ client.on(Events.InteractionCreate, async interaction => {
       const reason = interaction.options.getString("reason") || "No reason provided";
       if (!target.moderatable) { await interaction.reply({ content: "I cannot edit that member. Check role hierarchy and permissions.", ephemeral: true }); return; }
       await target.timeout(null, reason);
+      await cancelScheduledActions({ guildId: interaction.guildId, userId: target.id, action: "timeout-expire" });
       await sendModLog(interaction.guild, { action: "untimeout", userId: target.id, username: target.user.tag, moderatorId: interaction.user.id, reason, status: "completed" });
       await interaction.reply({ content: "Timeout removed for " + target.user.tag + ".", ephemeral: true });
       return;
