@@ -58,6 +58,10 @@ const commands = [
     .addUserOption(o => o.setName("user").setDescription("Member").setRequired(true))
     .addIntegerOption(o => o.setName("amount").setDescription("Points to add (1–100)").setRequired(true).setMinValue(1).setMaxValue(100))
     .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true).setMaxLength(500)),
+  new SlashCommandBuilder().setName("party-config").setDescription("Set the server's public party-finder channel")
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .addChannelOption(o => o.setName("channel").setDescription("Channel where active parties are listed").setRequired(true)),
+  new SlashCommandBuilder().setName("party-list").setDescription("Browse active parties in this server"),
   new SlashCommandBuilder().setName("party-create").setDescription("Create a private party channel")
     .addStringOption(o => o.setName("name").setDescription("Party name").setRequired(true).setMaxLength(60))
     .addStringOption(o => o.setName("description").setDescription("What the party is for").setMaxLength(900))
