@@ -39,9 +39,12 @@ export async function GET(request) {
       const date = v => v?.toDate ? v.toDate().toISOString() : v instanceof Date ? v.toISOString() : typeof v === "string" ? v : null;
       return { id: d.id, ...x, createdAt: date(x.createdAt), updatedAt: date(x.updatedAt), expiresAt: date(x.expiresAt), lastActiveAt: date(x.lastActiveAt) };
     };
+    const settingsSnap = await firestore.collection("guildSettings").doc(guildId).get();
+    const settings = settingsSnap.exists ? settingsSnap.data().settings || {} : {};
     return NextResponse.json({
       parties: partySnap.docs.map(serialize).filter(x => x.status === "active").sort((a,b) => Date.parse(b.createdAt || 0)-Date.parse(a.createdAt || 0)).slice(0,50),
-      missions: missionSnap.docs.map(serialize).filter(x => x.status === "active").sort((a,b) => Date.parse(b.createdAt || 0)-Date.parse(a.createdAt || 0)).slice(0,50)
+      missions: missionSnap.docs.map(serialize).filter(x => x.status === "active").sort((a,b) => Date.parse(b.createdAt || 0)-Date.parse(a.createdAt || 0)).slice(0,50),
+      partyLfgChannelId: settings.partyLfgChannelId || ""
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) { return NextResponse.json({ error: "Could not load community data: " + error.message }, { status: 500 }); }
 }
@@ -52,6 +55,16 @@ export async function POST(request) {
   if (!ctx) return NextResponse.json({ error: "Sign in and select a server you manage." }, { status: 403 });
   try {
     const firestore = db();
+    if (action === "configure-party-finder") {
+      const channelId = String(body.channelId || "");
+      const channels = await botRequest("/guilds/" + encodeURIComponent(guildId) + "/channels");
+      const channel = channels.find(c => c.id === channelId && [0,5].includes(c.type));
+      if (!channel) return NextResponse.json({ error: "Choose a text or announcement channel in this server." }, { status: 400 });
+      const ref = firestore.collection("guildSettings").doc(guildId), snap = await ref.get();
+      const settings = snap.exists ? snap.data().settings || {} : {};
+      await ref.set({ guildId, settings: { ...settings, partyLfgChannelId: channelId }, updatedAt: new Date().toISOString() }, { merge: true });
+      return NextResponse.json({ ok: true, channelId });
+    }
     if (action === "create-mission") {
       const title = String(body.title || "").trim(), description = String(body.description || "").trim();
       const goal = Number(body.goal), channelId = String(body.channelId || "");
