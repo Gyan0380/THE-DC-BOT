@@ -24,7 +24,7 @@ export async function POST(request) {
   if (!/^\d{17,20}$/.test(String(userId || ""))) {
     return NextResponse.json({ error: "Enter a valid Discord member ID." }, { status: 400 });
   }
-  if (action === "ban" && durationHours != null && (!Number.isInteger(Number(durationHours)) || Number(durationHours) < 1 || Number(durationHours) > 8760)) return NextResponse.json({ error: "Temporary ban duration must be 1–8760 hours." }, { status: 400 });
+  if (action === "ban" && durationHours != null && durationHours !== "" && (!Number.isInteger(Number(durationHours)) || Number(durationHours) < 1 || Number(durationHours) > 8760)) return NextResponse.json({ error: "Temporary ban duration must be 1–8760 hours." }, { status: 400 });
   const token = process.env.DISCORD_TOKEN;
   if (!token) return NextResponse.json({ error: "DISCORD_TOKEN is not configured in Vercel." }, { status: 503 });
   const why = String(reason || "Action from THE DC BOT dashboard").slice(0, 500);
@@ -65,7 +65,7 @@ export async function POST(request) {
       } else if (firestore && action === "untimeout") {
         const pending = await firestore.collection("scheduledActions").where("status", "==", "pending").limit(500).get();
         await Promise.all(pending.docs.filter(d => d.data().guildId === guildId && d.data().userId === userId && d.data().action === "timeout-expire").map(d => d.ref.update({ status: "cancelled", cancelledAt: new Date() })));
-      } else if (firestore && action === "ban" && durationHours != null) {
+      } else if (firestore && action === "ban" && durationHours != null && durationHours !== "") {
         await firestore.collection("scheduledActions").add({ guildId, userId, action: "unban", executeAt: new Date(Date.now() + Number(durationHours) * 3600000), moderatorId: session.user?.id || "dashboard", reason: why, status: "pending", createdAt: new Date(), attempts: 0, lastError: null });
       }
     } catch (error) { console.error("Could not persist dashboard punishment timer:", error.message); }
