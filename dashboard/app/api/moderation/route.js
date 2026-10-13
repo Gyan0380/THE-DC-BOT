@@ -50,6 +50,8 @@ export async function POST(request) {
       const firestore = db();
       if (!firestore) throw new Error("Firebase Admin credentials are not configured.");
       const timerAction = action === "timeout" ? "timeout-expire" : "unban";
+      const pending = await firestore.collection("scheduledActions").where("status", "==", "pending").get();
+      await Promise.all(pending.docs.filter(d => d.data().guildId === guildId && d.data().userId === userId && d.data().action === timerAction).map(d => d.ref.update({ status: "cancelled", cancelledAt: new Date() })));
       const executeAt = action === "timeout" ? new Date(Date.now() + Number(minutes) * 60000) : new Date(Date.now() + Number(durationHours) * 3600000);
       timerRef = await firestore.collection("scheduledActions").add({ guildId, userId, action: timerAction, executeAt, moderatorId: session.user?.id || "dashboard", reason: why, status: "pending", createdAt: new Date(), attempts: 0, lastError: null });
     } catch (error) {
