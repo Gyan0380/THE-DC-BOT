@@ -11,6 +11,14 @@ const commands = [
   new SlashCommandBuilder().setName("rules-set").setDescription("Set server rules, one per line")
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .addStringOption(o => o.setName("rules").setDescription("Write each rule on a new line, including explicit actions/durations").setRequired(true).setMaxLength(4000)),
+  new SlashCommandBuilder().setName("welcome-setup").setDescription("Configure the welcome message channel")
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .addChannelOption(o => o.setName("channel").setDescription("Welcome channel").setRequired(true))
+    .addStringOption(o => o.setName("message").setDescription("Message with {user} and {server} placeholders").setMaxLength(1500)),
+  new SlashCommandBuilder().setName("goodbye-setup").setDescription("Configure the goodbye message channel")
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .addChannelOption(o => o.setName("channel").setDescription("Goodbye channel").setRequired(true))
+    .addStringOption(o => o.setName("message").setDescription("Message with {user} and {server} placeholders").setMaxLength(1500)),
   new SlashCommandBuilder().setName("welcome-config").setDescription("Open the Welcome & Goodbye setup panel")
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
   new SlashCommandBuilder().setName("punish").setDescription("Open the moderation control panel")
