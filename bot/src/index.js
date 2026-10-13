@@ -85,9 +85,9 @@ client.on(Events.MessageCreate, async message => {
         if (member?.moderatable && member.id !== message.guild.ownerId) {
           try {
             durationMinutes = deterministicFinding.durationMinutes;
-            await member.timeout(durationMinutes * 60000, reason);
-            await scheduleAction({ guildId: message.guildId, userId: member.id, action: "timeout-expire", executeAt: new Date(Date.now() + durationMinutes * 60000), moderatorId: client.user.id, reason });
-            appliedAction = "timeout";
+            const timerId = await scheduleAction({ guildId: message.guildId, userId: member.id, action: "timeout-expire", executeAt: new Date(Date.now() + durationMinutes * 60000), moderatorId: client.user.id, reason });
+            try { await member.timeout(durationMinutes * 60000, reason); appliedAction = "timeout"; }
+            catch (error) { await getDb().collection("scheduledActions").doc(timerId).update({ status: "cancelled", cancelledAt: new Date(), lastError: "Automatic timeout application failed" }).catch(() => {}); throw error; }
           } catch (timeoutError) {
             console.error("Rule timeout failed:", timeoutError.message);
           }
@@ -129,7 +129,9 @@ client.on(Events.MessageCreate, async message => {
             const member = message.member || await message.guild.members.fetch(message.author.id).catch(() => null);
             if (minutes > 0 && minutes <= 40320 && member?.moderatable) {
               const reason = "Configured rule " + finding.ruleId + ": " + finding.reason;
-              await member.timeout(minutes * 60000, reason);
+              const timerId = await scheduleAction({ guildId: message.guildId, userId: member.id, action: "timeout-expire", executeAt: new Date(Date.now() + minutes * 60000), moderatorId: client.user.id, reason });
+              try { await member.timeout(minutes * 60000, reason); }
+              catch (error) { await getDb().collection("scheduledActions").doc(timerId).update({ status: "cancelled", cancelledAt: new Date(), lastError: "AI timeout application failed" }).catch(() => {}); throw error; }
               const dmSent = await dmMember(member.user, message.guild, client.user, "Automatic timeout", "A configured server rule was matched: **" + String(finding.ruleId) + "**.\nReason: " + finding.reason, minutes + " minutes");
               await logAction(message.guildId, { action: "ai_auto_timeout", userId: member.id, username: member.user.tag, moderatorId: client.user.id, moderatorName: client.user.tag, reason, ruleId: finding.ruleId, durationMinutes: minutes, confidence: finding.confidence, dmSent, status: "completed" });
             }
