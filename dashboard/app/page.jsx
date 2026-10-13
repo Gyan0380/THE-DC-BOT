@@ -38,6 +38,7 @@ export default function Home() {
   const [chatHealthBusy, setChatHealthBusy] = useState(false);
   const [communityData, setCommunityData] = useState({ parties: [], missions: [] });
   const [communityBusy, setCommunityBusy] = useState(false);
+  const [partyFinderChannelId, setPartyFinderChannelId] = useState("");
   const [partyForm, setPartyForm] = useState({ name: "", description: "", maxMembers: 5, temporaryMinutes: 0 });
   const [missionForm, setMissionForm] = useState({ title: "", description: "", goal: 10, channelId: "" });
 
@@ -143,13 +144,13 @@ export default function Home() {
   async function loadCommunity() {
     if (!guildId || !user) return;
     setCommunityBusy(true);
-    try { const r = await fetch("/api/community?guildId=" + encodeURIComponent(guildId), { cache: "no-store" }); const d = await r.json(); if (!r.ok) throw new Error(d.error || "Could not load community data."); setCommunityData({ parties:d.parties||[], missions:d.missions||[] }); }
+    try { const r = await fetch("/api/community?guildId=" + encodeURIComponent(guildId), { cache: "no-store" }); const d = await r.json(); if (!r.ok) throw new Error(d.error || "Could not load community data."); setCommunityData({ parties:d.parties||[], missions:d.missions||[] }); setPartyFinderChannelId(d.partyLfgChannelId || ""); }
     catch (e) { setError(e.message || "Could not load community data."); } finally { setCommunityBusy(false); }
   }
   async function communityAction(action, data) {
     if (!guildId || communityBusy) return;
     setCommunityBusy(true); setNotice(""); setError("");
-    try { const r = await fetch("/api/community", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ guildId, action, ...data }) }); const d=await r.json(); if(!r.ok) throw new Error(d.error||"Community action failed."); setNotice(action === "create-party" ? "Private party created. ID: "+d.id : action === "create-mission" ? "Mission created. ID: "+d.id : "Party closed."); await loadCommunity(); }
+    try { const r = await fetch("/api/community", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ guildId, action, ...data }) }); const d=await r.json(); if(!r.ok) throw new Error(d.error||"Community action failed."); setNotice(action === "create-party" ? "Private party created. ID: "+d.id : action === "create-mission" ? "Mission created. ID: "+d.id : action === "configure-party-finder" ? "Party finder channel saved." : "Party closed."); await loadCommunity(); }
     catch(e) { setError(e.message||"Community action failed."); } finally { setCommunityBusy(false); }
   }
   async function addPoints() {
@@ -408,6 +409,10 @@ export default function Home() {
           </>}
           {active === "Community" && <>
             <div className="panelHeading"><div><h3>Community tools</h3><p className="muted">Create private parties and progress-based missions. Records are stored in the existing Firebase project.</p></div><button className="secondary" disabled={communityBusy} onClick={loadCommunity}>{communityBusy ? "Loading…" : "Refresh"}</button></div>
+            <div className="sectionDivider"></div><h3>Public party finder</h3>
+            <p className="hint">New parties will be announced in this channel. The party itself stays private and each member joins through the bot.</p>
+            <label className="fieldLabel">Party listing channel</label><select value={partyFinderChannelId} onChange={e=>setPartyFinderChannelId(e.target.value)}><option value="">Select a text channel</option>{channels.map(ch=><option key={ch.id} value={ch.id}>#{ch.name}</option>)}</select>
+            <div className="actions"><button className="primary" disabled={communityBusy || !partyFinderChannelId} onClick={()=>communityAction("configure-party-finder",{channelId:partyFinderChannelId})}>Save party finder channel</button></div>
             <div className="sectionDivider"></div><h3>Create a private party</h3>
             <label className="fieldLabel">Party name</label><input value={partyForm.name} maxLength={60} onChange={e=>setPartyForm(p=>({...p,name:e.target.value}))} placeholder="Minecraft survival team"/>
             <label className="fieldLabel">Description</label><textarea rows={2} value={partyForm.description} maxLength={900} onChange={e=>setPartyForm(p=>({...p,description:e.target.value}))} placeholder="What the party is for"/>
