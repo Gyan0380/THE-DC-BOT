@@ -65,6 +65,21 @@ export async function POST(request) {
       await ref.set({ guildId, settings: { ...settings, partyLfgChannelId: channelId }, updatedAt: new Date().toISOString() }, { merge: true });
       return NextResponse.json({ ok: true, channelId });
     }
+    if (action === "mission-progress") {
+      const missionId = String(body.missionId || ""), amount = Number(body.amount || 1);
+      if (!Number.isInteger(amount) || amount < 1 || amount > 100000) return NextResponse.json({ error: "Progress must be 1–100000." }, { status: 400 });
+      const ref = firestore.collection("missions").doc(missionId);
+      const result = await firestore.runTransaction(async tx => {
+        const snap = await tx.get(ref);
+        if (!snap.exists || snap.data().guildId !== guildId || snap.data().status !== "active") throw new Error("Active mission not found.");
+        const data = snap.data(), progress = Math.min(Number(data.goal), Number(data.progress || 0) + amount);
+        const participants = Array.isArray(data.participantIds) ? data.participantIds : [];
+        tx.update(ref, { progress, participantIds: participants.includes(ctx.session.user.id) ? participants : [...participants, ctx.session.user.id], status: progress >= Number(data.goal) ? "completed" : "active", updatedAt: new Date(), ...(progress >= Number(data.goal) ? { completedAt: new Date() } : {}) });
+        return { ...data, progress, status: progress >= Number(data.goal) ? "completed" : "active" };
+      });
+      if (result.channelId) await botRequest("/channels/" + encodeURIComponent(result.channelId) + "/messages", { method: "POST", body: JSON.stringify({ content: "Mission **" + result.title + "** progress: **" + result.progress + "/" + result.goal + "**" + (result.status === "completed" ? "\\nMission completed!" : "") }) }).catch(() => null);
+      return NextResponse.json({ ok: true, progress: result.progress, goal: result.goal, status: result.status });
+    }
     if (action === "create-mission") {
       const title = String(body.title || "").trim(), description = String(body.description || "").trim();
       const goal = Number(body.goal), channelId = String(body.channelId || "");
