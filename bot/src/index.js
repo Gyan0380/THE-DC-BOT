@@ -7,6 +7,7 @@ const { getGuildSettings, patchGuildSettings } = require("./guild-settings");
 const { inspectMessage, saveReview } = require("./moderation");
 const { PROVIDERS, getProviderConfig, validateApiKey, classifyMessage, shouldInspectWithAi } = require("./ai-provider");
 const { encryptApiKey, decryptApiKey } = require("./ai-key-vault");
+const { scheduleAction, startPersistentTimers } = require("./persistent-timers");
 const { openWelcomePanel, openPunishPanel, handlePanelInteraction, dmMember, logAction, dashUrl } = require("./panels");
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require("discord.js");
 
@@ -14,7 +15,10 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
 });
 
-client.once(Events.ClientReady, ready => console.log("Logged in as " + ready.user.tag));
+client.once(Events.ClientReady, ready => {
+  console.log("Logged in as " + ready.user.tag);
+  startPersistentTimers(client);
+});
 
 client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
   try {
@@ -290,6 +294,7 @@ client.on(Events.InteractionCreate, async interaction => {
       const reason = interaction.options.getString("reason") || "No reason provided";
       if (!target.moderatable || target.id === interaction.user.id) { await interaction.reply({ content: "I cannot timeout that member. Check role hierarchy and permissions.", ephemeral: true }); return; }
       await target.timeout(minutes * 60 * 1000, reason);
+      await scheduleAction({ guildId: interaction.guildId, userId: target.id, action: "timeout-expire", executeAt: new Date(Date.now() + minutes * 60000), moderatorId: interaction.user.id, reason });
       const dmSent = await dmMember(target.user, interaction.guild, interaction.user, "timeout", reason, minutes + " minute(s)");
       await sendModLog(interaction.guild, { action: "timeout", userId: target.id, username: target.user.tag, moderatorId: interaction.user.id, moderatorName: interaction.user.tag, reason, durationMinutes: minutes, dmSent, status: "completed" });
       await interaction.reply({ content: "Timed out " + target.user.tag + " for " + minutes + " minute(s). Reason: " + reason + "\n" + (dmSent ? "✅ DM notification sent." : "⚠️ Timeout applied, but DM could not be delivered (the member may have DMs disabled or blocked the bot)."), ephemeral: true });
@@ -313,9 +318,21 @@ client.on(Events.InteractionCreate, async interaction => {
       const target = interaction.options.getMember("user", true);
       const reason = interaction.options.getString("reason") || "No reason provided";
       if (!target.moderatable || target.id === interaction.user.id) { await interaction.reply({ content: "I cannot moderate that member. Check role hierarchy.", ephemeral: true }); return; }
-      if (command === "kick") await target.kick(reason); else await target.ban({ reason });
-      await sendModLog(interaction.guild, { action: command, userId: target.id, username: target.user.tag, moderatorId: interaction.user.id, reason, status: "completed" });
-      await interaction.reply({ content: target.user.tag + " was " + (command === "kick" ? "kicked." : "banned."), ephemeral: true });
+      if (command === "kick") {
+        await target.kick(reason);
+      } else {
+        await target.ban({ reason });
+        const durationHours = interaction.options.getInteger("duration_hours");
+        if (durationHours) {
+          await scheduleAction({ guildId: interaction.guildId, userId: target.id, action: "unban", executeAt: new Date(Date.now() + durationHours * 3600000), moderatorId: interaction.user.id, reason });
+        }
+      }
+      const durationHours = command === "ban" ? interaction.options.getInteger("duration_hours") : null;
+      const dmSent = command === "ban"
+        ? await dmMember(target.user, interaction.guild, interaction.user, "ban", reason, durationHours ? durationHours + " hour(s)" : null)
+        : false;
+      await sendModLog(interaction.guild, { action: command, userId: target.id, username: target.user.tag, moderatorId: interaction.user.id, moderatorName: interaction.user.tag, reason, durationHours: durationHours || null, dmSent, status: "completed" });
+      await interaction.reply({ content: target.user.tag + " was " + (command === "kick" ? "kicked." : (durationHours ? "banned for " + durationHours + " hour(s)." : "banned permanently.")) + (command === "ban" ? "\nDM: " + (dmSent ? "sent" : "could not be delivered (DMs may be closed)") : ""), ephemeral: true });
       return;
     }
 
