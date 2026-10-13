@@ -85,6 +85,7 @@ client.on(Events.MessageCreate, async message => {
         if (member?.moderatable && member.id !== message.guild.ownerId) {
           try {
             durationMinutes = deterministicFinding.durationMinutes;
+            await cancelScheduledActions({ guildId: message.guildId, userId: member.id, action: "timeout-expire" });
             const timerId = await scheduleAction({ guildId: message.guildId, userId: member.id, action: "timeout-expire", executeAt: new Date(Date.now() + durationMinutes * 60000), moderatorId: client.user.id, reason });
             try { await member.timeout(durationMinutes * 60000, reason); appliedAction = "timeout"; }
             catch (error) { await getDb().collection("scheduledActions").doc(timerId).update({ status: "cancelled", cancelledAt: new Date(), lastError: "Automatic timeout application failed" }).catch(() => {}); throw error; }
@@ -290,6 +291,7 @@ client.on(Events.InteractionCreate, async interaction => {
       const minutes = interaction.options.getInteger("minutes", true);
       const reason = interaction.options.getString("reason") || "No reason provided";
       if (!target.moderatable || target.id === interaction.user.id) { await interaction.reply({ content: "I cannot timeout that member. Check role hierarchy and permissions.", ephemeral: true }); return; }
+      await cancelScheduledActions({ guildId: interaction.guildId, userId: target.id, action: "timeout-expire" });
       const timerId = await scheduleAction({ guildId: interaction.guildId, userId: target.id, action: "timeout-expire", executeAt: new Date(Date.now() + minutes * 60000), moderatorId: interaction.user.id, reason });
       try { await target.timeout(minutes * 60 * 1000, reason); }
       catch (error) { await getDb().collection("scheduledActions").doc(timerId).update({ status: "cancelled", cancelledAt: new Date(), lastError: "Timeout application failed" }).catch(() => {}); throw error; }
@@ -321,6 +323,7 @@ client.on(Events.InteractionCreate, async interaction => {
         await target.kick(reason);
       } else {
         const durationHours = interaction.options.getInteger("duration_hours");
+        if (durationHours) await cancelScheduledActions({ guildId: interaction.guildId, userId: target.id, action: "unban" });
         const timerId = durationHours ? await scheduleAction({ guildId: interaction.guildId, userId: target.id, action: "unban", executeAt: new Date(Date.now() + durationHours * 3600000), moderatorId: interaction.user.id, reason }) : null;
         try { await target.ban({ reason }); }
         catch (error) { if (timerId) await getDb().collection("scheduledActions").doc(timerId).update({ status: "cancelled", cancelledAt: new Date(), lastError: "Ban application failed" }).catch(() => {}); throw error; }
