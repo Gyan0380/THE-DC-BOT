@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-const sections = ["Overview", "Welcome & Goodbye", "Rules", "AutoMod", "Moderation", "Giveaways", "Chat Health", "Logs", "Settings"];
+const sections = ["Overview", "Welcome & Goodbye", "Rules", "AutoMod", "Moderation", "Giveaways", "Chat Health", "Community", "Logs", "Settings"];
 
 export default function Home() {
   const [user, setUser] = useState(null);
@@ -36,6 +36,10 @@ export default function Home() {
   const [giveawayBusy, setGiveawayBusy] = useState(false);
   const [chatHealth, setChatHealth] = useState({ date: null, users: [] });
   const [chatHealthBusy, setChatHealthBusy] = useState(false);
+  const [communityData, setCommunityData] = useState({ parties: [], missions: [] });
+  const [communityBusy, setCommunityBusy] = useState(false);
+  const [partyForm, setPartyForm] = useState({ name: "", description: "", maxMembers: 5, temporaryMinutes: 0 });
+  const [missionForm, setMissionForm] = useState({ title: "", description: "", goal: 10, channelId: "" });
 
   const guild = guilds.find(g => g.id === guildId) || null;
   const canSave = Boolean(user && guild && !busy);
@@ -136,6 +140,18 @@ export default function Home() {
     finally { setBusy(false); }
   }
 
+  async function loadCommunity() {
+    if (!guildId || !user) return;
+    setCommunityBusy(true);
+    try { const r = await fetch("/api/community?guildId=" + encodeURIComponent(guildId), { cache: "no-store" }); const d = await r.json(); if (!r.ok) throw new Error(d.error || "Could not load community data."); setCommunityData({ parties:d.parties||[], missions:d.missions||[] }); }
+    catch (e) { setError(e.message || "Could not load community data."); } finally { setCommunityBusy(false); }
+  }
+  async function communityAction(action, data) {
+    if (!guildId || communityBusy) return;
+    setCommunityBusy(true); setNotice(""); setError("");
+    try { const r = await fetch("/api/community", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ guildId, action, ...data }) }); const d=await r.json(); if(!r.ok) throw new Error(d.error||"Community action failed."); setNotice(action === "create-party" ? "Private party created. ID: "+d.id : action === "create-mission" ? "Mission created. ID: "+d.id : "Party closed."); await loadCommunity(); }
+    catch(e) { setError(e.message||"Community action failed."); } finally { setCommunityBusy(false); }
+  }
   async function addPoints() {
     if (!guildId || !pointsForm.userId.trim() || !pointsForm.reason.trim() || pointsBusy) return;
     setPointsBusy(true); setNotice(""); setError("");
@@ -184,6 +200,7 @@ export default function Home() {
     if (!guildId || !user) return;
     if (active === "Giveaways") loadGiveaways().catch(e => setError(e.message));
     if (active === "Chat Health") loadChatHealth();
+    if (active === "Community") loadCommunity();
   }, [guildId, user, active]);
 
   async function logout() {
@@ -199,7 +216,7 @@ export default function Home() {
       <label className="label" htmlFor="server">YOUR SERVERS</label>
       {user && <select id="server" value={guildId} onChange={e => { setGuildId(e.target.value); setNotice(""); setError(""); }}><option value="">Select a server</option>{guilds.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select>}
       <div className="label navTitle">DASHBOARD</div>
-      <nav>{sections.map((s, i) => <button key={s} className={active === s ? "navItem active" : "navItem"} onClick={() => setActive(s)}><span>{["⌂","✦","☷","◇","⚑","✳","◷","≡","⚙"][i]}</span>{s}</button>)}</nav>
+      <nav>{sections.map((s, i) => <button key={s} className={active === s ? "navItem active" : "navItem"} onClick={() => setActive(s)}><span>{["⌂","✦","☷","◇","⚑","✳","◷","◎","≡","⚙"][i]}</span>{s}</button>)}</nav>
       <div className="profile"><span className="avatar">{initials}</span><span><b>{user?.username || "Not signed in"}</b><small>{user ? "Discord account connected" : "Sign in to continue"}</small></span></div>
     </aside>
     <section className="main">
@@ -389,12 +406,29 @@ export default function Home() {
             <div className="sectionDivider"></div><div className="panelHeading"><div><h3>Saved giveaways</h3><p className="hint">Up to 50 recent records from this server.</p></div></div>
             {!giveaways.length ? <div className="placeholder"><b>No saved giveaways</b><p className="muted">Create a giveaway above or use the giveaway-create command in Discord.</p></div> : <div className="logList">{giveaways.map(g => <article className="logEntry" key={g.id}><div className="logTop"><b>{g.prize}</b><span className="tag">{g.status}</span></div><p>Entries: {g.participantCount} · Channel: {g.channelId ? "#" + (channels.find(c => c.id === g.channelId)?.name || g.channelId) : "—"}</p><div className="logMeta"><span>ID: {g.id}</span><span>{g.endsAt ? (g.status === "active" ? "Ends " : "Ended ") + new Date(g.endsAt).toLocaleString() : "End time unavailable"}</span><span>{g.winnerId ? "Winner: " + g.winnerId : ""}</span></div></article>)}</div>}
           </>}
+          {active === "Community" && <>
+            <div className="panelHeading"><div><h3>Community tools</h3><p className="muted">Create private parties and progress-based missions. Records are stored in the existing Firebase project.</p></div><button className="secondary" disabled={communityBusy} onClick={loadCommunity}>{communityBusy ? "Loading…" : "Refresh"}</button></div>
+            <div className="sectionDivider"></div><h3>Create a private party</h3>
+            <label className="fieldLabel">Party name</label><input value={partyForm.name} maxLength={60} onChange={e=>setPartyForm(p=>({...p,name:e.target.value}))} placeholder="Minecraft survival team"/>
+            <label className="fieldLabel">Description</label><textarea rows={2} value={partyForm.description} maxLength={900} onChange={e=>setPartyForm(p=>({...p,description:e.target.value}))} placeholder="What the party is for"/>
+            <div className="moduleGrid"><div><label className="fieldLabel">Maximum members (2–50)</label><input type="number" min="2" max="50" value={partyForm.maxMembers} onChange={e=>setPartyForm(p=>({...p,maxMembers:Number(e.target.value)}))}/></div><div><label className="fieldLabel">Temporary duration in minutes (0 = owner-managed)</label><input type="number" min="0" max="10080" value={partyForm.temporaryMinutes} onChange={e=>setPartyForm(p=>({...p,temporaryMinutes:Number(e.target.value)}))}/></div></div>
+            <div className="actions"><button className="primary" disabled={communityBusy || !partyForm.name.trim()} onClick={()=>communityAction("create-party",partyForm)}>{communityBusy ? "Working…" : "Create private party"}</button></div>
+            <div className="sectionDivider"></div><h3>Create a community mission</h3>
+            <label className="fieldLabel">Mission title</label><input value={missionForm.title} maxLength={100} onChange={e=>setMissionForm(p=>({...p,title:e.target.value}))} placeholder="Weekend gaming challenge"/>
+            <label className="fieldLabel">Description</label><textarea rows={2} value={missionForm.description} maxLength={900} onChange={e=>setMissionForm(p=>({...p,description:e.target.value}))} placeholder="What should the community achieve?"/>
+            <div className="moduleGrid"><div><label className="fieldLabel">Goal (1–1000000)</label><input type="number" min="1" max="1000000" value={missionForm.goal} onChange={e=>setMissionForm(p=>({...p,goal:Number(e.target.value)}))}/></div><div><label className="fieldLabel">Announcement channel</label><select value={missionForm.channelId} onChange={e=>setMissionForm(p=>({...p,channelId:e.target.value}))}><option value="">Select channel</option>{channels.map(ch=><option key={ch.id} value={ch.id}>#{ch.name}</option>)}</select></div></div>
+            <div className="actions"><button className="primary" disabled={communityBusy || !missionForm.title.trim() || !missionForm.description.trim() || !missionForm.channelId} onClick={()=>communityAction("create-mission",missionForm)}>{communityBusy ? "Working…" : "Create mission & announce"}</button></div>
+            <div className="sectionDivider"></div><h3>Active parties</h3>
+            {!communityData.parties.length ? <div className="placeholder"><b>No active parties</b><p className="muted">Use this dashboard or /party-create to create one.</p></div> : <div className="logList">{communityData.parties.map(p=><article className="logEntry" key={p.id}><div className="logTop"><b>{p.name}</b><span className="tag">{(p.memberIds||[]).length}/{p.maxMembers} members</span></div><p>{p.description||"Community party"} · <a href={"https://discord.com/channels/"+guildId+"/"+p.channelId} target="_blank" rel="noreferrer">Open party channel</a></p><div className="logMeta"><span>ID: {p.id}</span><span>Owner: {p.ownerId}</span><span>{p.expiresAt ? "Expires "+new Date(p.expiresAt).toLocaleString() : "Owner-managed"}</span></div><div className="actions"><button className="secondary" disabled={communityBusy} onClick={()=>{if(window.confirm("Close this party and delete its private channel?"))communityAction("close-party",{partyId:p.id});}}>Close party</button></div></article>)}</div>}
+            <div className="sectionDivider"></div><h3>Active missions</h3>
+            {!communityData.missions.length ? <div className="placeholder"><b>No active missions</b><p className="muted">Create a mission above or use /mission-create in Discord.</p></div> : <div className="logList">{communityData.missions.map(m=><article className="logEntry" key={m.id}><div className="logTop"><b>{m.title}</b><span className="tag">{m.progress}/{m.goal}</span></div><p>{m.description}</p><div className="logMeta"><span>ID: {m.id}</span><span>Participants: {(m.participantIds||[]).length}</span><span>Channel: {m.channelId ? "#"+(channels.find(ch=>ch.id===m.channelId)?.name||m.channelId) : "—"}</span></div></article>)}</div>}
+          </>}
           {active === "Chat Health" && <>
             <div className="panelHeading"><div><h3>Chat Health Monitor</h3><p className="muted">Daily Firestore snapshots; the bot retains the newest seven snapshots per server.</p></div><button className="secondary" disabled={chatHealthBusy} onClick={loadChatHealth}>{chatHealthBusy ? "Loading…" : "Refresh analytics"}</button></div>
             <div className="stats"><article className="stat"><small>LATEST SNAPSHOT</small><strong>{chatHealth.date || "Not available"}</strong><span>Latest saved daily snapshot</span></article><article className="stat"><small>TRACKED MEMBERS</small><strong>{chatHealth.users?.length || 0}</strong><span>Members in latest snapshot</span></article><article className="stat"><small>RETENTION</small><strong>7 days</strong><span>Oldest daily snapshot is removed first</span></article><article className="stat"><small>LIVE COMMAND</small><strong>/chat-health</strong><span>Moderator-only summary in Discord</span></article></div>
             {!chatHealth.users?.length ? <div className="placeholder"><b>No chat-health snapshot yet</b><p className="muted">The bot needs to run and record messages before the first snapshot is available. Check bot status and refresh later.</p></div> : <div className="logList">{chatHealth.users.map((u,i) => <article className="logEntry" key={u.userId}><div className="logTop"><b>{i+1}. {u.userId}</b><span className="tag">{u.messages7d} messages / 7 days</span></div><div className="logMeta"><span>Active days: {u.activeDays}</span><span>Last message: {u.lastMessageAt ? new Date(u.lastMessageAt).toLocaleString() : "—"}</span></div></article>)}</div>}
           </>}
-          {active !== "Settings" && active !== "Giveaways" && active !== "Chat Health" && <div className="actions"><button className="secondary" onClick={() => window.location.reload()}>Reload saved values</button><button className="primary" disabled={!canSave} onClick={save}>{busy ? "Saving…" : "Save to Firebase"}</button></div>}
+          {active !== "Settings" && active !== "Giveaways" && active !== "Chat Health" && active !== "Community" && <div className="actions"><button className="secondary" onClick={() => window.location.reload()}>Reload saved values</button><button className="primary" disabled={!canSave} onClick={save}>{busy ? "Saving…" : "Save to Firebase"}</button></div>}
         </section>}
         <footer>THE DC BOT <span>Discord OAuth · Firestore-backed settings</span></footer>
       </div>
