@@ -160,7 +160,7 @@ async function snapshotChatHealth(guildId) {
     if (!d.userId || !d.date || d.date > today) continue;
     const row = byUser.get(d.userId) || { userId: d.userId, messages7d: 0, activeDays: 0, lastMessageAt: null };
     if (Date.now() - Date.parse(d.date + "T00:00:00Z") <= 7 * 86400000) row.messages7d += Number(d.messages || 0);
-    row.activeDays += 1;
+    if (Date.now() - Date.parse(d.date + "T00:00:00Z") <= 7 * 86400000) row.activeDays += 1;
     const t = d.lastMessageAt?.toDate ? d.lastMessageAt.toDate() : new Date(d.lastMessageAt || 0);
     if (!row.lastMessageAt || t > row.lastMessageAt) row.lastMessageAt = t;
     byUser.set(d.userId, row);
@@ -206,12 +206,11 @@ async function runCommunityMaintenance(client) {
     const expiry = doc.data().expiresAt?.toDate ? doc.data().expiresAt.toDate().getTime() : Date.parse(doc.data().expiresAt || "");
     if (Number.isFinite(expiry) && expiry <= Date.now()) await doc.ref.update({ status: "expired" }).catch(() => {});
   }
-  const guilds = await db.collection("guildSettings").limit(200).get().catch(() => null);
-  if (guilds) for (const doc of guilds.docs) {
+  for (const guild of client.guilds.cache.values()) {
     const today = new Date().toISOString().slice(0, 10);
-    const snapRef = db.collection("chatHealthSnapshots").doc(doc.id + "_" + today);
+    const snapRef = db.collection("chatHealthSnapshots").doc(guild.id + "_" + today);
     const exists = await snapRef.get().catch(() => null);
-    if (!exists?.exists) await snapshotChatHealth(doc.id).catch(error => console.error("Chat health snapshot failed:", error.message));
+    if (!exists?.exists) await snapshotChatHealth(guild.id).catch(error => console.error("Chat health snapshot failed:", error.message));
   }
 }
 
