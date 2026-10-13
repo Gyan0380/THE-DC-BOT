@@ -167,6 +167,7 @@ async function handlePanelInteraction(interaction) {
         const n = Number(interaction.fields.getTextInputValue("duration"));
         if (!Number.isInteger(n) || n < 1 || n > 40320) { await interaction.reply({ content: "Timeout duration must be 1–40320 minutes.", ephemeral: true }); return true; }
         duration = n + " minutes";
+        await cancelScheduledActions({ guildId: interaction.guildId, userId: member.id, action: "timeout-expire" });
         const timerId = await scheduleAction({ guildId: interaction.guildId, userId: member.id, action: "timeout-expire", executeAt: new Date(Date.now() + n * 60000), moderatorId: interaction.user.id, reason });
         try { await member.timeout(n * 60000, reason); }
         catch (error) { await getDb().collection("scheduledActions").doc(timerId).update({ status: "cancelled", cancelledAt: new Date(), lastError: "Panel timeout application failed" }).catch(() => {}); throw error; }
