@@ -77,7 +77,7 @@ export async function POST(request) {
         tx.update(ref, { progress, participantIds: participants.includes(ctx.session.user.id) ? participants : [...participants, ctx.session.user.id], status: progress >= Number(data.goal) ? "completed" : "active", updatedAt: new Date(), ...(progress >= Number(data.goal) ? { completedAt: new Date() } : {}) });
         return { ...data, progress, status: progress >= Number(data.goal) ? "completed" : "active" };
       });
-      if (result.channelId) await botRequest("/channels/" + encodeURIComponent(result.channelId) + "/messages", { method: "POST", body: JSON.stringify({ content: "Mission **" + result.title + "** progress: **" + result.progress + "/" + result.goal + "**" + (result.status === "completed" ? "\\nMission completed!" : "") }) }).catch(() => null);
+      if (result.channelId) await botRequest("/channels/" + encodeURIComponent(result.channelId) + "/messages", { method: "POST", body: JSON.stringify({ content: "Mission **" + result.title + "** progress: **" + result.progress + "/" + result.goal + "**" + (result.status === "completed" ? "\nMission completed!" : "") }) }).catch(() => null);
       return NextResponse.json({ ok: true, progress: result.progress, goal: result.goal, status: result.status });
     }
     if (action === "create-mission") {
