@@ -38,8 +38,10 @@ async function processDueActions(client) {
   try {
     const now = new Date();
     const snapshot = await getDb().collection(COLLECTION)
-      .where("status", "==", "pending").where("executeAt", "<=", now).limit(100).get();
+      .where("status", "==", "pending").limit(200).get();
     for (const doc of snapshot.docs) {
+      const dueAt = doc.data().executeAt?.toDate ? doc.data().executeAt.toDate() : new Date(doc.data().executeAt);
+      if (!Number.isFinite(dueAt.getTime()) || dueAt > now) continue;
       const ref = doc.ref;
       let data = doc.data();
       const claimed = await getDb().runTransaction(async tx => {
