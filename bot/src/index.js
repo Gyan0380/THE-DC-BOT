@@ -9,7 +9,7 @@ const { PROVIDERS, getProviderConfig, validateApiKey, classifyMessage, shouldIns
 const { encryptApiKey, decryptApiKey } = require("./ai-key-vault");
 const { scheduleAction, cancelScheduledActions, startPersistentTimers } = require("./persistent-timers");
 const { createGiveaway, joinGiveaway, startGiveawayWorker } = require("./giveaways");
-const { getProfile, changeReputation, addModerationPoints, createParty, joinParty, leaveParty, closeParty, createMission, missionProgress, listActiveMissions, recordChatHealth, snapshotChatHealth, saveCompanionQuestion, getCompanionRecap, startCommunityWorkers } = require("./community");
+const { getProfile, changeReputation, addModerationPoints, createParty, touchParty, joinParty, leaveParty, closeParty, createMission, missionProgress, listActiveMissions, recordChatHealth, snapshotChatHealth, saveCompanionQuestion, getCompanionRecap, startCommunityWorkers } = require("./community");
 const { openWelcomePanel, openPunishPanel, handlePanelInteraction, dmMember, logAction, dashUrl } = require("./panels");
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require("discord.js");
 
@@ -58,6 +58,7 @@ client.on(Events.MessageCreate, async message => {
   if (!message.guild || message.author.bot) return;
   try {
     recordChatHealth(message).catch(error => console.warn("Chat health record failed:", error.message));
+    touchParty(message.channel).catch(error => console.warn("Party activity update failed:", error.message));
     const settings = await getGuildSettings(message.guildId);
     if (settings.automod?.enabled === false) return;
 
@@ -399,12 +400,28 @@ client.on(Events.InteractionCreate, async interaction => {
       await sendModLog(interaction.guild, { action: "points_add", userId: target.id, username: target.tag, moderatorId: interaction.user.id, moderatorName: interaction.user.tag, reason, points: amount, totalModerationPoints: total, status: "completed" });
       await interaction.reply({ content: "Added " + amount + " moderation point(s) to " + target.tag + ". New total: **" + total + "**. Reason: " + reason, ephemeral: true }); return;
     }
+    if (command === "party-config") {
+      if (!isModerator(interaction, PermissionFlagsBits.ManageGuild)) { await interaction.reply({ content: "You need Manage Server permission.", ephemeral: true }); return; }
+      const channel = interaction.options.getChannel("channel", true);
+      if (![ChannelType.GuildText, ChannelType.GuildAnnouncement].includes(channel.type)) { await interaction.reply({ content: "Choose a text or announcement channel.", ephemeral: true }); return; }
+      await patchGuildSettings(interaction.guildId, { partyLfgChannelId: channel.id });
+      await interaction.reply({ content: "Party finder is now configured to post active parties in " + channel + ".", ephemeral: true }); return;
+    }
+    if (command === "party-list") {
+      const snap = await getDb().collection("parties").where("guildId", "==", interaction.guildId).limit(200).get();
+      const active = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(p => p.status === "active").slice(0, 12);
+      const body = active.length ? active.map(p => "• **" + String(p.name || "Party").slice(0, 80) + "** — <#" + p.channelId + "> · " + (p.memberIds || []).length + "/" + p.maxMembers + " members · ID `" + p.id + "`").join("\n") : "No active parties. Create one with /party-create.";
+      await interaction.reply({ content: "**Active party finder**\n" + body.slice(0, 1850), ephemeral: true }); return;
+    }
     if (command === "party-create") {
       const name = interaction.options.getString("name", true), description = interaction.options.getString("description") || "", maxMembers = interaction.options.getInteger("max_members") || 5, temporaryMinutes = interaction.options.getInteger("temporary_minutes") || 0;
       const result = await createParty({ guild: interaction.guild, owner: interaction.user, name, description, maxMembers, temporaryMinutes });
       await result.channel.setTopic((description ? description + " | " : "") + "Party ID: " + result.id + " | Owner: " + interaction.user.id).catch(() => {});
       await result.channel.send({ content: "**" + name + "**\n" + (description || "Community party") + "\nOwner: <@" + interaction.user.id + ">\nParty ID: `" + result.id + "`\nMembers: 1/" + maxMembers + "\nJoin with `/party-join party_id:" + result.id + "`. Use /party-close when finished." });
-      await interaction.reply({ content: "Private party created: " + result.channel + "\nParty ID: `" + result.id + "`" + (result.expiresAt ? "\nAuto-closes <t:" + Math.floor(result.expiresAt.getTime()/1000) + ":R>." : "\nOwner-managed until closed."), ephemeral: true }); return;
+      const settings = await getGuildSettings(interaction.guildId);
+      const lfg = settings.partyLfgChannelId ? await interaction.guild.channels.fetch(settings.partyLfgChannelId).catch(() => null) : null;
+      if (lfg?.isTextBased()) await lfg.send({ content: "**New party: " + name + "**\n" + (description || "Community party") + "\nChannel: " + result.channel + "\nMembers: 1/" + maxMembers + "\nJoin using /party-join with ID `" + result.id + "`.\n" + (result.expiresAt ? "Temporary party expires <t:" + Math.floor(result.expiresAt.getTime()/1000) + ":R>." : "Owner-managed; inactivity warning after 3 days and close after 7 days.") }).catch(() => {});
+      await interaction.reply({ content: "Private party created: " + result.channel + "\nParty ID: `" + result.id + "`" + (result.expiresAt ? "\nAuto-closes <t:" + Math.floor(result.expiresAt.getTime()/1000) + ":R>." : "\nOwner-managed until closed. Inactivity warning after 3 days; auto-close after 7 days."), ephemeral: true }); return;
     }
     if (command === "party-join") {
       const id = interaction.options.getString("party_id", true).trim();
