@@ -227,11 +227,16 @@ async function runCommunityMaintenance(client) {
     const expiry = doc.data().expiresAt?.toDate ? doc.data().expiresAt.toDate().getTime() : Date.parse(doc.data().expiresAt || "");
     if (Number.isFinite(expiry) && expiry <= Date.now()) await doc.ref.delete().catch(() => {});
   }
+  if (!global.__theDcChatHealthSnapshotAt) global.__theDcChatHealthSnapshotAt = {};
   for (const guild of client.guilds.cache.values()) {
-    const today = new Date().toISOString().slice(0, 10);
-    const snapRef = db.collection("chatHealthSnapshots").doc(guild.id + "_" + today);
-    const exists = await snapRef.get().catch(() => null);
-    if (!exists?.exists) await snapshotChatHealth(guild.id).catch(error => console.error("Chat health snapshot failed:", error.message));
+    const lastSnapshotAt = Number(global.__theDcChatHealthSnapshotAt[guild.id] || 0);
+    // Refresh today's rolling 7-day view hourly; keep one document per calendar day.
+    if (Date.now() - lastSnapshotAt >= 60 * 60 * 1000) {
+      try {
+        await snapshotChatHealth(guild.id);
+        global.__theDcChatHealthSnapshotAt[guild.id] = Date.now();
+      } catch (error) { console.error("Chat health snapshot failed:", error.message); }
+    }
   }
 }
 
