@@ -20,19 +20,7 @@ client.once(Events.ClientReady, ready => {
   startPersistentTimers(client);
 });
 
-client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
-  try {
-    const before = oldMember.communicationDisabledUntilTimestamp;
-    const after = newMember.communicationDisabledUntilTimestamp;
-    if (before && !after) {
-      const audit = await newMember.guild.fetchAuditLogs({ type: 24, limit: 5 }).catch(() => null);
-      const latest = audit?.entries?.find(e => e.target?.id === newMember.id);
-      const moderator = latest?.executor || client.user;
-      const dmSent = await dmMember(newMember.user, newMember.guild, moderator, "Timeout ended", "Your timeout has expired or was removed.", null);
-      await logAction(newMember.guild.id, { action: "timeout_expired", userId: newMember.id, username: newMember.user.tag, moderatorId: moderator.id, moderatorName: moderator.tag || "THE DC BOT", reason: "Timeout expired or removed", dmSent, status: "completed" });
-    }
-  } catch (error) { console.error("Timeout expiry notification failed:", error); }
-});
+// Timed punishment expiry notifications are handled by persistent-timers.js so downtime is covered and DMs are not duplicated.
 
 client.on(Events.GuildMemberAdd, async member => {
   try {
@@ -92,6 +80,7 @@ client.on(Events.MessageCreate, async message => {
           try {
             durationMinutes = deterministicFinding.durationMinutes;
             await member.timeout(durationMinutes * 60000, reason);
+            await scheduleAction({ guildId: message.guildId, userId: member.id, action: "timeout-expire", executeAt: new Date(Date.now() + durationMinutes * 60000), moderatorId: client.user.id, reason });
             appliedAction = "timeout";
           } catch (timeoutError) {
             console.error("Rule timeout failed:", timeoutError.message);
