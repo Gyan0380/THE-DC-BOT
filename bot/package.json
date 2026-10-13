@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node src/index.js",
     "deploy-commands": "node src/deploy-commands.js",
-    "check": "node --check src/index.js && node --check src/db.js && node --check src/moderation.js && node --check src/giveaways.js && node --check src/persistent-timers.js && node --check src/guild-settings.js && node --check src/panels.js && node --check src/deploy-commands.js && node --check src/ai-provider.js && node --check src/ai-key-vault.js"
+    "check": "node --check src/index.js && node --check src/db.js && node --check src/moderation.js && node --check src/giveaways.js && node --check src/persistent-timers.js && node --check src/guild-settings.js && node --check src/community.js && node --check src/panels.js && node --check src/deploy-commands.js && node --check src/ai-provider.js && node --check src/ai-key-vault.js"
   },
   "engines": {
     "node": ">=20"
