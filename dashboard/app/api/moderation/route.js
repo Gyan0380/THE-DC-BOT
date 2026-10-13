@@ -63,7 +63,7 @@ export async function POST(request) {
       if (firestore && action === "timeout") {
         await firestore.collection("scheduledActions").add({ guildId, userId, action: "timeout-expire", executeAt: new Date(Date.now() + Number(minutes) * 60000), moderatorId: session.user?.id || "dashboard", reason: why, status: "pending", createdAt: new Date(), attempts: 0, lastError: null });
       } else if (firestore && action === "untimeout") {
-        const pending = await firestore.collection("scheduledActions").where("status", "==", "pending").limit(500).get();
+        const pending = await firestore.collection("scheduledActions").where("status", "==", "pending").get();
         await Promise.all(pending.docs.filter(d => d.data().guildId === guildId && d.data().userId === userId && d.data().action === "timeout-expire").map(d => d.ref.update({ status: "cancelled", cancelledAt: new Date() })));
       } else if (firestore && action === "ban" && durationHours != null && durationHours !== "") {
         await firestore.collection("scheduledActions").add({ guildId, userId, action: "unban", executeAt: new Date(Date.now() + Number(durationHours) * 3600000), moderatorId: session.user?.id || "dashboard", reason: why, status: "pending", createdAt: new Date(), attempts: 0, lastError: null });
