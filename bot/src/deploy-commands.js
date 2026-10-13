@@ -54,6 +54,11 @@ const commands = [
     .addUserOption(o => o.setName("user").setDescription("Member").setRequired(true))
     .addIntegerOption(o => o.setName("amount").setDescription("Reputation change (-100 to 100, not zero)").setRequired(true).setMinValue(-100).setMaxValue(100))
     .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true).setMaxLength(500)),
+  new SlashCommandBuilder().setName("points-add").setDescription("Add moderation points to a member")
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
+    .addUserOption(o => o.setName("user").setDescription("Member").setRequired(true))
+    .addIntegerOption(o => o.setName("amount").setDescription("Points to add (1–100)").setRequired(true).setMinValue(1).setMaxValue(100))
+    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(true).setMaxLength(500)),
   new SlashCommandBuilder().setName("party-create").setDescription("Create a private party channel")
     .addStringOption(o => o.setName("name").setDescription("Party name").setRequired(true).setMaxLength(60))
     .addStringOption(o => o.setName("description").setDescription("What the party is for").setMaxLength(900))
