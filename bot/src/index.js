@@ -391,7 +391,11 @@ client.on(Events.InteractionCreate, async interaction => {
       const target = interaction.options.getUser("user", true), amount = interaction.options.getInteger("amount", true), reason = interaction.options.getString("reason", true);
       if (target.bot) { await interaction.reply({ content: "Reputation changes for bots are not supported.", ephemeral: true }); return; }
       const profile = await changeReputation({ guildId: interaction.guildId, userId: target.id, moderatorId: interaction.user.id, amount, reason });
-      await interaction.reply({ content: "Updated " + target.tag + "'s reputation by " + (amount > 0 ? "+" : "") + amount + ". New total: **" + profile.reputation + "**. Reason: " + reason, ephemeral: true }); return;
+      const changeLabel = (amount > 0 ? "+" : "") + amount;
+      const dmSent = await dmMember(target, interaction.guild, interaction.user, "Reputation update", reason, changeLabel + " reputation");
+      await logAction(interaction.guildId, { action: "reputation_change", userId: target.id, username: target.tag, moderatorId: interaction.user.id, moderatorName: interaction.user.tag, reason, reputationChange: amount, reputationTotal: profile.reputation, dmSent, status: "completed" });
+      await interaction.channel.send({ content: "🏅 <@" + target.id + "> reputation updated by **" + changeLabel + "**. New total: **" + profile.reputation + "**.\nReason: " + reason, allowedMentions: { users: [target.id] } }).catch(() => {});
+      await interaction.reply({ content: "Updated " + target.tag + "'s reputation by " + changeLabel + ". New total: **" + profile.reputation + "**. DM " + (dmSent ? "sent." : "could not be delivered.") , ephemeral: true }); return;
     }
     if (command === "points-add") {
       if (!isModerator(interaction, PermissionFlagsBits.ManageMessages)) { await interaction.reply({ content: "You need Manage Messages permission.", ephemeral: true }); return; }
