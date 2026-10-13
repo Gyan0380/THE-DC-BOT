@@ -49,7 +49,7 @@ async function joinGiveaway(id, guildId, userId) {
   });
 }
 
-async function processDueGiveaways(client) {
+async function processDueGiveawaysInternal(client) {
   const db = getDb();
   const due = await getDueGiveaways(new Date()).catch(error => { console.error("Giveaway scan failed:", error.message); return []; });
   for (const giveaway of due) {
@@ -87,6 +87,14 @@ async function processDueGiveaways(client) {
       console.error("Could not announce giveaway result; will retry:", error.message);
     }
   }
+}
+
+let giveawayWorkerRunning = false;
+async function processDueGiveaways(client) {
+  if (giveawayWorkerRunning) return;
+  giveawayWorkerRunning = true;
+  try { await processDueGiveawaysInternal(client); }
+  finally { giveawayWorkerRunning = false; }
 }
 
 function startGiveawayWorker(client) {
