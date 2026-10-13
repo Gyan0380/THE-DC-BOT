@@ -13,7 +13,7 @@ export default function Home() {
   const [health, setHealth] = useState({ firebase: "checking", bot: "unknown" });
   const [channels, setChannels] = useState([]);
   const [channelError, setChannelError] = useState("");
-  const [moderationForm, setModerationForm] = useState({ action: "timeout", userId: "", minutes: 10, reason: "" });
+  const [moderationForm, setModerationForm] = useState({ action: "timeout", userId: "", minutes: 10, durationHours: 24, reason: "" });
   const [pointsForm, setPointsForm] = useState({ userId: "", amount: 1, reason: "" });
   const [pointsBusy, setPointsBusy] = useState(false);
   const [settings, setSettings] = useState({ welcome: { enabled: false, channelId: "", message: "Welcome {user} to {server}!" }, goodbye: { enabled: false, channelId: "", message: "Goodbye {user}!" }, rules: [], automod: { enabled: false, autoTimeoutMinutes: 0 }, spamDetection: { messages: 5, windowSeconds: 6, repeats: 4, repeatWindowSeconds: 15 }, moderation: {}, giveaways: {}, logs: {} });
@@ -359,7 +359,7 @@ export default function Home() {
             <p className="muted">Enter the target member's Discord ID (Developer Mode → right-click member → Copy User ID). Discord bot permissions and role hierarchy still apply.</p>
             <label className="fieldLabel">Action</label><select value={moderationForm.action} onChange={e => setModerationForm(p => ({...p, action:e.target.value}))}><option value="timeout">Timeout</option><option value="untimeout">Remove timeout</option><option value="kick">Kick</option><option value="ban">Ban</option></select>
             <label className="fieldLabel">Member ID</label><input value={moderationForm.userId} onChange={e => setModerationForm(p => ({...p, userId:e.target.value}))} placeholder="Discord user ID"/>
-            {moderationForm.action === "timeout" && <><label className="fieldLabel">Duration in minutes (1–40320)</label><input type="number" min="1" max="40320" value={moderationForm.minutes} onChange={e => setModerationForm(p => ({...p, minutes:e.target.value}))}/></>}
+            {moderationForm.action === "timeout" && <><label className="fieldLabel">Duration in minutes (1–40320)</label><input type="number" min="1" max="40320" value={moderationForm.minutes} onChange={e => setModerationForm(p => ({...p, minutes:e.target.value}))}/></>}\n            {moderationForm.action === "ban" && <><label className="fieldLabel">Temporary ban duration in hours (1–8760; leave blank for permanent)</label><input type="number" min="1" max="8760" value={moderationForm.durationHours} onChange={e => setModerationForm(p => ({...p, durationHours:e.target.value}))}/><p className="hint">Use 0 for permanent ban. Temporary bans are unbanned after the saved absolute expiry time.</p></>}
             <label className="fieldLabel">Reason</label><textarea rows={3} value={moderationForm.reason} onChange={e => setModerationForm(p => ({...p, reason:e.target.value}))} placeholder="Reason for this action"/>
             <div className="actions"><button className="primary" disabled={busy || !moderationForm.userId.trim()} onClick={runModeration}>{busy ? "Working…" : "Run moderation action"}</button></div>
             <p className="hint">Actions are sent to Discord immediately and may not be reversible.</p>
