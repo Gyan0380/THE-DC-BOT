@@ -9,7 +9,7 @@ const { PROVIDERS, getProviderConfig, validateApiKey, classifyMessage, shouldIns
 const { encryptApiKey, decryptApiKey } = require("./ai-key-vault");
 const { scheduleAction, startPersistentTimers } = require("./persistent-timers");
 const { createGiveaway, joinGiveaway, startGiveawayWorker } = require("./giveaways");
-const { getProfile, changeReputation, createParty, joinParty, leaveParty, closeParty, createMission, missionProgress, listActiveMissions, recordChatHealth, snapshotChatHealth, saveCompanionQuestion, getCompanionRecap, startCommunityWorkers } = require("./community");
+const { getProfile, changeReputation, addModerationPoints, createParty, joinParty, leaveParty, closeParty, createMission, missionProgress, listActiveMissions, recordChatHealth, snapshotChatHealth, saveCompanionQuestion, getCompanionRecap, startCommunityWorkers } = require("./community");
 const { openWelcomePanel, openPunishPanel, handlePanelInteraction, dmMember, logAction, dashUrl } = require("./panels");
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require("discord.js");
 
@@ -62,7 +62,7 @@ client.on(Events.MessageCreate, async message => {
     if (settings.automod?.enabled === false) return;
 
     // Run configurable, server-specific rules before optional AI moderation.
-    const deterministicFinding = inspectMessage(message, settings.rules || [], settings.spamDetection || {});
+    const deterministicFinding = inspectMessage(message, settings.rules || [], settings.spamDetection || {}, settings.rulePolicies || {});
     if (deterministicFinding.status === "review") {
       let appliedAction = "warning";
       let durationMinutes = null;
@@ -388,6 +388,15 @@ client.on(Events.InteractionCreate, async interaction => {
       if (target.bot) { await interaction.reply({ content: "Reputation changes for bots are not supported.", ephemeral: true }); return; }
       const profile = await changeReputation({ guildId: interaction.guildId, userId: target.id, moderatorId: interaction.user.id, amount, reason });
       await interaction.reply({ content: "Updated " + target.tag + "'s reputation by " + (amount > 0 ? "+" : "") + amount + ". New total: **" + profile.reputation + "**. Reason: " + reason, ephemeral: true }); return;
+    }
+    if (command === "points-add") {
+      if (!isModerator(interaction, PermissionFlagsBits.ManageMessages)) { await interaction.reply({ content: "You need Manage Messages permission.", ephemeral: true }); return; }
+      const target = interaction.options.getUser("user", true);
+      if (target.bot) { await interaction.reply({ content: "Moderation points for bots are not supported.", ephemeral: true }); return; }
+      const amount = interaction.options.getInteger("amount", true), reason = interaction.options.getString("reason", true);
+      const total = await addModerationPoints({ guildId: interaction.guildId, userId: target.id, moderatorId: interaction.user.id, amount, reason });
+      await sendModLog(interaction.guild, { action: "points_add", userId: target.id, username: target.tag, moderatorId: interaction.user.id, moderatorName: interaction.user.tag, reason, points: amount, totalModerationPoints: total, status: "completed" });
+      await interaction.reply({ content: "Added " + amount + " moderation point(s) to " + target.tag + ". New total: **" + total + "**. Reason: " + reason, ephemeral: true }); return;
     }
     if (command === "party-create") {
       const name = interaction.options.getString("name", true), description = interaction.options.getString("description") || "", maxMembers = interaction.options.getInteger("max_members") || 5, temporaryMinutes = interaction.options.getInteger("temporary_minutes") || 0;
