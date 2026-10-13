@@ -17,13 +17,14 @@ export const dynamic = "force-dynamic";
 export async function POST(request) {
   const session = await getSession();
   const body = await request.json().catch(() => ({}));
-  const { guildId, action, userId, reason, minutes } = body;
+  const { guildId, action, userId, reason, minutes, durationHours } = body;
   if (!guildId || !session?.guilds?.some(g => g.id === guildId)) {
     return NextResponse.json({ error: "Sign in and select a server you manage." }, { status: 403 });
   }
   if (!/^\d{17,20}$/.test(String(userId || ""))) {
     return NextResponse.json({ error: "Enter a valid Discord member ID." }, { status: 400 });
   }
+  if (action === "ban" && durationHours != null && (!Number.isInteger(Number(durationHours)) || Number(durationHours) < 1 || Number(durationHours) > 8760)) return NextResponse.json({ error: "Temporary ban duration must be 1–8760 hours." }, { status: 400 });
   const token = process.env.DISCORD_TOKEN;
   if (!token) return NextResponse.json({ error: "DISCORD_TOKEN is not configured in Vercel." }, { status: 503 });
   const why = String(reason || "Action from THE DC BOT dashboard").slice(0, 500);
@@ -57,6 +58,17 @@ export async function POST(request) {
         (data.message || "Discord moderation action failed.");
       return NextResponse.json({ error: message }, { status: response.status });
     }
+    try {
+      const firestore = db();
+      if (firestore && action === "timeout") {
+        await firestore.collection("scheduledActions").add({ guildId, userId, action: "timeout-expire", executeAt: new Date(Date.now() + Number(minutes) * 60000), moderatorId: session.user?.id || "dashboard", reason: why, status: "pending", createdAt: new Date(), attempts: 0, lastError: null });
+      } else if (firestore && action === "untimeout") {
+        const pending = await firestore.collection("scheduledActions").where("status", "==", "pending").limit(500).get();
+        await Promise.all(pending.docs.filter(d => d.data().guildId === guildId && d.data().userId === userId && d.data().action === "timeout-expire").map(d => d.ref.update({ status: "cancelled", cancelledAt: new Date() })));
+      } else if (firestore && action === "ban" && durationHours != null) {
+        await firestore.collection("scheduledActions").add({ guildId, userId, action: "unban", executeAt: new Date(Date.now() + Number(durationHours) * 3600000), moderatorId: session.user?.id || "dashboard", reason: why, status: "pending", createdAt: new Date(), attempts: 0, lastError: null });
+      }
+    } catch (error) { console.error("Could not persist dashboard punishment timer:", error.message); }
     let dmSent = false;
     try {
       const dmChannelResponse = await fetch("https://discord.com/api/v10/users/@me/channels", {
@@ -70,13 +82,14 @@ export async function POST(request) {
           ? "You have been timed out in this server for " + minutes + " minute(s)."
           : action === "untimeout" ? "Your timeout has been removed."
           : action === "kick" ? "You have been kicked from this server."
-          : "You have been banned from this server.";
+          : "You have been banned from this server." + (durationHours ? " Temporary ban duration: " + durationHours + " hour(s)." : " This ban is permanent.");
         const messageResponse = await fetch("https://discord.com/api/v10/channels/" + dmChannel.id + "/messages", {
           method: "POST", headers: { Authorization: "Bot " + token, "Content-Type": "application/json" },
           body: JSON.stringify({ embeds: [{ title: "Moderation Notice", description, fields: [
             { name: "Action", value: actionLabel, inline: true },
             { name: "Moderator", value: String(session.user?.username || "Server moderator"), inline: true },
-            { name: "Reason", value: why.slice(0, 900) }
+            { name: "Reason", value: why.slice(0, 900) },
+            ...(action === "ban" && durationHours ? [{ name: "Duration", value: durationHours + " hour(s)" }] : [])
           ], footer: { text: "THE DC BOT" }, timestamp: new Date().toISOString() }] }), cache: "no-store"
         });
         dmSent = messageResponse.ok;
@@ -88,10 +101,11 @@ export async function POST(request) {
         guildId, action, userId, moderatorId: session.user?.id || "dashboard",
         moderatorName: session.user?.username || "Dashboard moderator", reason: why,
         durationMinutes: action === "timeout" ? Number(minutes) : null,
+        durationHours: action === "ban" && durationHours ? Number(durationHours) : null,
         dmSent, status: "completed", createdAt: new Date()
       });
     } catch (error) { console.error("Could not save dashboard moderation log:", error); }
-    return NextResponse.json({ ok: true, dmSent, message: action + " completed for member ID " + userId + ". DM " + (dmSent ? "sent." : "could not be delivered; the member may have DMs disabled.") });
+    return NextResponse.json({ ok: true, dmSent, message: action + " completed for member ID " + userId + (action === "ban" && durationHours ? " for " + durationHours + " hour(s)." : ".") + " DM " + (dmSent ? "sent." : "could not be delivered; the member may have DMs disabled.") });
   } catch {
     return NextResponse.json({ error: "Could not contact Discord. Try again." }, { status: 502 });
   }
