@@ -38,7 +38,7 @@ async function processDueActions(client) {
   try {
     const now = new Date();
     const snapshot = await getDb().collection(COLLECTION)
-      .where("status", "==", "pending").limit(200).get();
+      .where("status", "==", "pending").get();
     for (const doc of snapshot.docs) {
       const dueAt = doc.data().executeAt?.toDate ? doc.data().executeAt.toDate() : new Date(doc.data().executeAt);
       if (!Number.isFinite(dueAt.getTime()) || dueAt > now) continue;
@@ -105,7 +105,7 @@ async function processDueActions(client) {
 }
 
 async function cancelScheduledActions({ guildId, userId, action }) {
-  const snapshot = await getDb().collection(COLLECTION).where("status", "==", "pending").limit(500).get();
+  const snapshot = await getDb().collection(COLLECTION).where("status", "==", "pending").get();
   const matches = snapshot.docs.filter(doc => {
     const d = doc.data();
     return d.guildId === guildId && d.userId === userId && (!action || d.action === action);
