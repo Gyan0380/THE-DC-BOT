@@ -32,48 +32,92 @@ function parseRuleAction(ruleText) {
 }
 
 // Conservative, rule-aware signal detection. Custom rules define the action; signals define when they match.
-function inspectMessage(message, rules = [], spamConfig = {}) {
-  const content = (message.content || "").trim();
+function inspectMessage(message, rules = [], spamConfig = {}, rulePolicies = {}) {
+  const content = String(message.content || "").trim();
   const normalized = content.toLowerCase().replace(/\s+/g, " ").trim();
-  const now = Date.now();
-  const key = message.guildId + ":" + message.author.id;
-  const spamRules = (Array.isArray(rules) ? rules : []).filter(r =>
-    /spam|flood|repeated messages|rapid messages/i.test(typeof r === "string" ? r : [r?.title, r?.description, r?.text].filter(Boolean).join(" "))
-  );
-  const hasSpamRule = spamRules.length > 0;
-  const history = (recentMessages.get(key) || []).filter(item => now - item.time <= 15000);
-  history.push({ time: now, content: normalized });
+  const now = Date.now(), key = message.guildId + ":" + message.author.id;
+  const history = (recentMessages.get(key) || []).filter(item => now - item.time <= 60 * 60 * 1000);
+  const isLink = /https?:\/\/|www\.|discord\.gg\//i.test(content);
+  const isInvite = /discord\.gg\/|discord\.com\/invite/i.test(content);
+  const upper = content.replace(/[^A-Za-z]/g, "");
+  const capsRatio = upper.length ? (upper.match(/[A-Z]/g) || []).length / upper.length : 0;
+  const emojiCount = (content.match(/[\p{Extended_Pictographic}]/gu) || []).length;
+  const current = { time: now, content: normalized, isLink, isInvite, mentions: (message.mentions?.users?.size || 0) + (message.mentions?.roles?.size || 0), everyone: /@everyone|@here/.test(content), attachments: message.attachments?.size || 0, capsRatio, emojiCount };
+  history.push(current);
+  if (history.length > 200) history.splice(0, history.length - 200);
   recentMessages.set(key, history);
 
   const rapidCount = Math.max(2, Math.min(30, Number(spamConfig.messages || 5)));
-  const rapidWindowSeconds = Math.max(1, Math.min(60, Number(spamConfig.windowSeconds || 6)));
+  const rapidWindowSeconds = Math.max(1, Math.min(3600, Number(spamConfig.windowSeconds || 6)));
   const repeatCount = Math.max(2, Math.min(20, Number(spamConfig.repeats || 4)));
-  const repeatWindowSeconds = Math.max(2, Math.min(120, Number(spamConfig.repeatWindowSeconds || 15)));
-  const rapid = history.filter(item => now - item.time <= rapidWindowSeconds * 1000).length >= rapidCount;
-  const repeated = normalized.length >= 3 && history.filter(item => item.content === normalized && now - item.time <= repeatWindowSeconds * 1000).length >= repeatCount;
-  const spam = hasSpamRule && (rapid || repeated);
-  const spamRule = spamRules[0];
-  const ruleText = typeof spamRule === "string" ? spamRule : [spamRule?.title, spamRule?.description, spamRule?.text].filter(Boolean).join(" ");
-  if (spam) {
-    const alertKey = key + ":spam";
-    const lastAlert = spamAlerts.get(alertKey) || 0;
-    if (now - lastAlert >= 30000) {
-      spamAlerts.set(alertKey, now);
-      const action = parseRuleAction(ruleText);
-      return {
-        status: "review", ruleId: (typeof spamRule === "object" && spamRule.id) || "spam",
-        ruleText,  reason: rapid ? "Spam: " + rapidCount + " messages within " + rapidWindowSeconds + " seconds" : "Spam: same message repeated " + repeatCount + " times within " + repeatWindowSeconds + " seconds",
-        points: parseRulePoints(ruleText), ...action
-      };
-    }
+  const repeatWindowSeconds = Math.max(2, Math.min(3600, Number(spamConfig.repeatWindowSeconds || 15)));
+  const usableRules = [];
+  let categoryNumber = 0, ruleNumber = 0, category = "#GENERAL";
+  for (const raw of (Array.isArray(rules) ? rules : [])) {
+    const text = typeof raw === "string" ? raw : [raw?.title, raw?.description, raw?.text].filter(Boolean).join(" ");
+    if (!text.trim()) continue;
+    if (text.trim().startsWith("#")) { category = text.trim().toUpperCase(); categoryNumber++; ruleNumber = 0; continue; }
+    ruleNumber++;
+    const title = text.replace(/\s*\(\d+\s+(?:points?|minutes? timeout)\)/gi, "").trim();
+    const policy = rulePolicies?.[title] || {};
+    if (policy.allChannels === false && !(policy.channelIds || []).includes(message.channelId)) continue;
+    if ((policy.excludedChannelIds || []).includes(message.channelId)) continue;
+    usableRules.push({ text, title, id: String(raw?.id || (categoryNumber || 1) + "." + ruleNumber), policy });
   }
 
-  const looksLikePromo = /(https?:\/\/|discord\.gg\/|youtube\.com\/|youtu\.be\/|twitch\.tv\/)/i.test(content);
-  if (looksLikePromo && !detectPromotionChannel(message.channel)) {
-    return { status: "review", ruleId: "3.2", reason: "Possible promotion outside a promotion channel", points: 2, action: "warning" };
+  for (const rule of usableRules) {
+    const { text: ruleText, title, id, policy } = rule;
+    const kind = String(policy.kind || (/spam|flood|repeated messages|rapid messages/i.test(ruleText) ? "rapid_spam" : /link|url/i.test(ruleText) ? "links" : /advert|promo/i.test(ruleText) ? "advertising" : "review")).toLowerCase();
+    const limit = Math.max(1, Math.min(100, Number(policy.limit || (kind === "repeat_spam" ? repeatCount : rapidCount))));
+    const windowSeconds = Math.max(1, Math.min(3600, Number(policy.windowSeconds || (kind === "repeat_spam" ? repeatWindowSeconds : rapidWindowSeconds))));
+    const window = history.filter(item => now - item.time <= windowSeconds * 1000);
+    let matched = false, reason = "";
+    if (["spam","rapid_spam","rapid message spam"].includes(kind)) {
+      matched = window.length >= Math.max(2, limit);
+      reason = "Rapid messages: " + window.length + " messages within " + windowSeconds + " seconds";
+    } else if (["repeat_spam","repeated messages"].includes(kind)) {
+      const repeats = window.filter(item => item.content === normalized).length;
+      matched = normalized.length >= 3 && repeats >= Math.max(2, limit);
+      reason = "Repeated message: same message " + repeats + " times within " + windowSeconds + " seconds";
+    } else if (["link_spam","invite_spam"].includes(kind)) {
+      const matches = window.filter(item => kind === "invite_spam" ? item.isInvite : item.isLink).length;
+      matched = (kind === "invite_spam" ? isInvite : isLink) && matches >= limit;
+      reason = (kind === "invite_spam" ? "Invite-link spam" : "Link spam") + ": " + matches + " matching messages within " + windowSeconds + " seconds";
+    } else if (["mention_spam","mass_ping"].includes(kind)) {
+      matched = current.everyone || current.mentions >= limit;
+      reason = current.everyone ? "Mass ping using @everyone/@here" : "Mention spam: " + current.mentions + " mentions";
+    } else if (kind === "caps") {
+      matched = upper.length >= 8 && capsRatio >= 0.75;
+      reason = "Excessive capital letters";
+    } else if (kind === "character_flood") {
+      matched = /(.)\1{14,}/u.test(content) || content.length > 1800;
+      reason = "Character flood or very long message";
+    } else if (kind === "attachment_spam") {
+      const attachments = window.reduce((sum, item) => sum + item.attachments, 0);
+      matched = current.attachments > 0 && attachments >= limit;
+      reason = "Attachment spam: " + attachments + " attachments within " + windowSeconds + " seconds";
+    } else if (kind === "emoji_spam") {
+      const emojis = window.reduce((sum, item) => sum + item.emojiCount, 0);
+      matched = current.emojiCount > 0 && emojis >= limit;
+      reason = "Emoji spam: " + emojis + " emoji within " + windowSeconds + " seconds";
+    } else if (["advertising","links"].includes(kind)) {
+      matched = isLink && !detectPromotionChannel(message.channel);
+      reason = "Possible promotion outside an allowed promotion channel";
+    } else if (kind === "review") {
+      const lower = content.toLowerCase();
+      matched = /(free nitro|steam gift|crypto giveaway|double your money|send me your password)/i.test(lower);
+      reason = "Possible scam wording sent for moderator review";
+    }
+    if (!matched) continue;
+    const alertKey = key + ":" + id;
+    if (now - (spamAlerts.get(alertKey) || 0) < 30000) continue;
+    spamAlerts.set(alertKey, now);
+    const action = parseRuleAction(ruleText);
+    return { status: "review", ruleId: id, ruleText, reason, points: parseRulePoints(ruleText), ...action };
   }
+
   if (content.length > 1800 || /(.)\1{14,}/u.test(content)) {
-    return { status: "review", ruleId: "4", reason: "Possible message flood", points: 2, action: "warning" };
+    return { status: "review", ruleId: "4", ruleText: "Character flood", reason: "Possible message flood", points: 2, action: "warning" };
   }
   return { status: "clear" };
 }
@@ -99,6 +143,10 @@ async function saveReview(client, message, finding) {
     createdAt: now
   };
   const ref = await getDb().collection("modlogs").add(record);
+  if (Number(finding.points) > 0) {
+    const profileRef = getDb().collection("memberProfiles").doc(message.guildId + "_" + message.author.id);
+    await profileRef.set({ guildId: message.guildId, userId: message.author.id, moderationPoints: require("firebase-admin/firestore").FieldValue.increment(Math.min(100, Math.max(0, Number(finding.points)))), updatedAt: now }, { merge: true }).catch(error => console.warn("Could not update moderation points:", error.message));
+  }
   const settings = await require("./guild-settings").getGuildSettings(message.guildId).catch(() => ({}));
   const logChannelId = settings.modLogChannelId || settings.modlogChannelId || process.env.MODLOG_CHANNEL_ID;
   const logChannel = logChannelId ? await message.guild.channels.fetch(logChannelId).catch(() => null) : null;
