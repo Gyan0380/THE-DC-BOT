@@ -62,6 +62,16 @@ async function createParty({ guild, owner, name, description, maxMembers, tempor
   return { id: ref.id, channel, expiresAt };
 }
 
+async function touchParty(channel) {
+  const match = String(channel?.topic || "").match(/Party ID:\s*([A-Za-z0-9_-]+)/i);
+  if (!match) return false;
+  const ref = getDb().collection("parties").doc(match[1]);
+  const snap = await ref.get();
+  if (!snap.exists || snap.data().status !== "active" || snap.data().channelId !== channel.id) return false;
+  await ref.update({ lastActiveAt: now(), inactivityWarningAt: null });
+  return true;
+}
+
 async function findParty(guildId, channelId) {
   const snap = await getDb().collection("parties").where("guildId", "==", guildId).limit(200).get();
   const doc = snap.docs.find(d => d.data().channelId === channelId && d.data().status === "active");
@@ -195,11 +205,20 @@ async function runCommunityMaintenance(client) {
   if (parties) for (const doc of parties.docs) {
     const data = doc.data();
     const expiry = data.expiresAt?.toDate ? data.expiresAt.toDate().getTime() : Date.parse(data.expiresAt || "");
-    if (!Number.isFinite(expiry) || expiry > Date.now()) continue;
-    await doc.ref.update({ status: "expired", closedAt: now() }).catch(() => {});
+    const lastActive = data.lastActiveAt?.toDate ? data.lastActiveAt.toDate().getTime() : Date.parse(data.lastActiveAt || data.createdAt || 0);
+    const isTemporaryExpired = Boolean(data.temporary) && Number.isFinite(expiry) && expiry <= Date.now();
+    const inactiveFor = Date.now() - (Number.isFinite(lastActive) ? lastActive : Date.now());
+    const inactiveExpired = !data.temporary && inactiveFor >= 7 * 86400000;
+    const shouldWarn = !data.temporary && inactiveFor >= 3 * 86400000 && !data.inactivityWarningAt;
     const guild = await client.guilds.fetch(data.guildId).catch(() => null);
     const channel = guild && await guild.channels.fetch(data.channelId).catch(() => null);
-    if (channel) await channel.delete("Temporary party expired").catch(() => {});
+    if (shouldWarn) {
+      if (channel?.isTextBased()) await channel.send("Party inactivity notice: this party has been quiet for 3 days. Send a message to keep it active; inactive owner-managed parties close after 7 days.").catch(() => {});
+      await doc.ref.update({ inactivityWarningAt: now() }).catch(() => {});
+    }
+    if (!isTemporaryExpired && !inactiveExpired) continue;
+    await doc.ref.update({ status: isTemporaryExpired ? "expired" : "closed", closedAt: now(), closeReason: isTemporaryExpired ? "temporary_expiry" : "inactive_7_days" }).catch(() => {});
+    if (channel) await channel.delete(isTemporaryExpired ? "Temporary party expired" : "Inactive party auto-closed after seven days").catch(() => {});
   }
   const qna = await db.collection("companionQuestions").where("status", "==", "active").limit(300).get().catch(() => null);
   if (qna) for (const doc of qna.docs) {
@@ -222,4 +241,4 @@ function startCommunityWorkers(client) {
   if (typeof global.__theDcCommunityWorker.unref === "function") global.__theDcCommunityWorker.unref();
 }
 
-module.exports = { getProfile, changeReputation, addModerationPoints, createParty, findParty, joinParty, leaveParty, closeParty, createMission, missionProgress, listActiveMissions, recordChatHealth, snapshotChatHealth, saveCompanionQuestion, getCompanionRecap, startCommunityWorkers, runCommunityMaintenance };
+module.exports = { getProfile, changeReputation, addModerationPoints, createParty, touchParty, findParty, joinParty, leaveParty, closeParty, createMission, missionProgress, listActiveMissions, recordChatHealth, snapshotChatHealth, saveCompanionQuestion, getCompanionRecap, startCommunityWorkers, runCommunityMaintenance };
