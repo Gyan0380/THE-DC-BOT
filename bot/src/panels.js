@@ -5,7 +5,7 @@ const {
 } = require("discord.js");
 const { getGuildSettings, patchGuildSettings } = require("./guild-settings");
 const { getDb } = require("./db");
-const { scheduleAction } = require("./persistent-timers");
+const { scheduleAction, cancelScheduledActions } = require("./persistent-timers");
 
 const dashUrl = process.env.DASHBOARD_URL || "https://thedcbot.vercel.app/api/auth/discord";
 
@@ -178,6 +178,7 @@ async function handlePanelInteraction(interaction) {
       if (!has(interaction, PermissionFlagsBits.ModerateMembers)) { await interaction.reply({ content: "You need Moderate Members permission.", ephemeral: true }); return true; }
       if (!member.moderatable) { await interaction.reply({ content: "The bot cannot edit this member due to role hierarchy.", ephemeral: true }); return true; }
       await member.timeout(null, reason || "Timeout removed by moderator");
+      await cancelScheduledActions({ guildId: interaction.guildId, userId: member.id, action: "timeout-expire" });
     }
     const dmSent = await dmMember(member.user, interaction.guild, interaction.user, action, reason, duration);
     await logAction(interaction.guildId, {
