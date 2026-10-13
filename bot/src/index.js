@@ -8,6 +8,8 @@ const { inspectMessage, saveReview } = require("./moderation");
 const { PROVIDERS, getProviderConfig, validateApiKey, classifyMessage, shouldInspectWithAi } = require("./ai-provider");
 const { encryptApiKey, decryptApiKey } = require("./ai-key-vault");
 const { scheduleAction, startPersistentTimers } = require("./persistent-timers");
+const { createGiveaway, joinGiveaway, startGiveawayWorker } = require("./giveaways");
+const { getProfile, changeReputation, createParty, joinParty, leaveParty, closeParty, createMission, missionProgress, listActiveMissions, recordChatHealth, snapshotChatHealth, saveCompanionQuestion, getCompanionRecap, startCommunityWorkers } = require("./community");
 const { openWelcomePanel, openPunishPanel, handlePanelInteraction, dmMember, logAction, dashUrl } = require("./panels");
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require("discord.js");
 
@@ -18,6 +20,8 @@ const client = new Client({
 client.once(Events.ClientReady, ready => {
   console.log("Logged in as " + ready.user.tag);
   startPersistentTimers(client);
+  startGiveawayWorker(client);
+  startCommunityWorkers(client);
 });
 
 // Timed punishment expiry notifications are handled by persistent-timers.js so downtime is covered and DMs are not duplicated.
@@ -53,6 +57,7 @@ client.on(Events.GuildMemberRemove, async member => {
 client.on(Events.MessageCreate, async message => {
   if (!message.guild || message.author.bot) return;
   try {
+    recordChatHealth(message).catch(error => console.warn("Chat health record failed:", error.message));
     const settings = await getGuildSettings(message.guildId);
     if (settings.automod?.enabled === false) return;
 
@@ -344,6 +349,117 @@ client.on(Events.InteractionCreate, async interaction => {
       const logs = snapshot.docs.map(doc => doc.data());
       const body = logs.length ? logs.map(l => "• " + (l.username || l.userId || "unknown") + " — " + (l.action || ("Rule " + l.ruleId)) + ": " + (l.reason || "No reason") + " [" + (l.status || "logged") + "]").join("\n") : "No moderation records yet.";
       await interaction.reply({ content: body.slice(0, 1900), ephemeral: true });
+    }
+
+    if (command === "giveaway-create") {
+      if (!isModerator(interaction, PermissionFlagsBits.ManageGuild)) { await interaction.reply({ content: "You need Manage Server permission.", ephemeral: true }); return; }
+      const prize = interaction.options.getString("prize", true);
+      const durationMs = interaction.options.getInteger("duration_minutes", true) * 60000;
+      const giveaway = await createGiveaway({ guildId: interaction.guildId, channelId: interaction.channelId, prize, durationMs, createdBy: interaction.user.id });
+      const post = await interaction.channel.send({ content: "🎉 **GIVEAWAY** 🎉\nPrize: **" + prize + "**\nEnds: <t:" + Math.floor(giveaway.endsAt.getTime() / 1000) + ":R>\nEnter with `/giveaway-join giveaway_id:" + giveaway.id + "`\nID: `" + giveaway.id + "`\nEntries are saved persistently; downtime does not reset the end time." });
+      await getDb().collection("giveaways").doc(giveaway.id).update({ messageId: post.id });
+      await interaction.reply({ content: "Giveaway created. ID: `" + giveaway.id + "`", ephemeral: true }); return;
+    }
+    if (command === "giveaway-join") {
+      const id = interaction.options.getString("giveaway_id", true).trim();
+      const result = await joinGiveaway(id, interaction.guildId, interaction.user.id);
+      await interaction.reply({ content: result.alreadyJoined ? "You have already entered this giveaway." : "You're entered! Total entries: " + result.count, ephemeral: true }); return;
+    }
+    if (command === "giveaway-list") {
+      const snap = await getDb().collection("giveaways").where("guildId", "==", interaction.guildId).limit(100).get();
+      const rows = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(g => g.status === "active").sort((a,b) => {
+        const end = x => x.endsAt?.toDate ? x.endsAt.toDate().getTime() : Date.parse(x.endsAt || 0);
+        return end(a) - end(b);
+      }).slice(0, 10);
+      const body = rows.length ? rows.map(g => {
+        const end = g.endsAt?.toDate ? g.endsAt.toDate() : new Date(g.endsAt);
+        return "• **" + String(g.prize || "Prize").slice(0, 120) + "** — ID `" + g.id + "`, " + (g.participantIds || []).length + " entries, ends <t:" + Math.floor(end.getTime()/1000) + ":R>";
+      }).join("\n") : "No active giveaways in this server.";
+      await interaction.reply({ content: body.slice(0, 1900), ephemeral: true }); return;
+    }
+    if (command === "profile") {
+      const target = interaction.options.getUser("user") || interaction.user;
+      const profile = await getProfile(interaction.guildId, target.id);
+      await interaction.reply({ content: "**Community profile: " + target.tag + "**\nReputation: **" + Number(profile.reputation || 0) + "**\nMessages tracked: **" + Number(profile.messages || 0) + "**\nLast seen: " + (profile.lastSeenAt?.toDate ? "<t:" + Math.floor(profile.lastSeenAt.toDate().getTime()/1000) + ":R>" : "not recorded yet"), ephemeral: true }); return;
+    }
+    if (command === "rep-add") {
+      if (!isModerator(interaction, PermissionFlagsBits.ManageMessages)) { await interaction.reply({ content: "You need Manage Messages permission.", ephemeral: true }); return; }
+      const target = interaction.options.getUser("user", true), amount = interaction.options.getInteger("amount", true), reason = interaction.options.getString("reason", true);
+      if (target.bot) { await interaction.reply({ content: "Reputation changes for bots are not supported.", ephemeral: true }); return; }
+      const profile = await changeReputation({ guildId: interaction.guildId, userId: target.id, moderatorId: interaction.user.id, amount, reason });
+      await interaction.reply({ content: "Updated " + target.tag + "'s reputation by " + (amount > 0 ? "+" : "") + amount + ". New total: **" + profile.reputation + "**. Reason: " + reason, ephemeral: true }); return;
+    }
+    if (command === "party-create") {
+      const name = interaction.options.getString("name", true), description = interaction.options.getString("description") || "", maxMembers = interaction.options.getInteger("max_members") || 5, temporaryMinutes = interaction.options.getInteger("temporary_minutes") || 0;
+      const result = await createParty({ guild: interaction.guild, owner: interaction.user, name, description, maxMembers, temporaryMinutes });
+      await result.channel.setTopic((description ? description + " | " : "") + "Party ID: " + result.id + " | Owner: " + interaction.user.id).catch(() => {});
+      await result.channel.send({ content: "**" + name + "**\n" + (description || "Community party") + "\nOwner: <@" + interaction.user.id + ">\nParty ID: `" + result.id + "`\nMembers: 1/" + maxMembers + "\nJoin with `/party-join party_id:" + result.id + "`. Use /party-close when finished." });
+      await interaction.reply({ content: "Private party created: " + result.channel + "\nParty ID: `" + result.id + "`" + (result.expiresAt ? "\nAuto-closes <t:" + Math.floor(result.expiresAt.getTime()/1000) + ":R>." : "\nOwner-managed until closed."), ephemeral: true }); return;
+    }
+    if (command === "party-join") {
+      const id = interaction.options.getString("party_id", true).trim();
+      const party = await joinParty(interaction.guild, interaction.user.id, id);
+      const channel = await interaction.guild.channels.fetch(party.channelId).catch(() => null);
+      if (!channel) throw new Error("Party channel is missing; ask its owner to close it.");
+      await channel.permissionOverwrites.edit(interaction.user.id, { ViewChannel: true, SendMessages: true, ReadMessageHistory: true, Connect: true, Speak: true });
+      await channel.send({ content: "<@" + interaction.user.id + "> joined the party." }).catch(() => {});
+      await interaction.reply({ content: party.alreadyMember ? "You're already a member of this party: " + channel : "Joined the party: " + channel, ephemeral: true }); return;
+    }
+    if (command === "party-leave") {
+      const id = interaction.options.getString("party_id", true).trim(), party = await leaveParty(interaction.guildId, interaction.user.id, id);
+      const channel = await interaction.guild.channels.fetch(party.channelId).catch(() => null);
+      if (channel) await channel.permissionOverwrites.delete(interaction.user.id).catch(() => {});
+      await interaction.reply({ content: "You left the party.", ephemeral: true }); return;
+    }
+    if (command === "party-close") {
+      const id = interaction.options.getString("party_id", true).trim();
+      await closeParty(interaction.guild, interaction.user.id, id);
+      await interaction.reply({ content: "Party closed.", ephemeral: true }); return;
+    }
+    if (command === "mission-create") {
+      if (!isModerator(interaction, PermissionFlagsBits.ManageGuild)) { await interaction.reply({ content: "You need Manage Server permission.", ephemeral: true }); return; }
+      const channel = interaction.options.getChannel("channel");
+      const mission = await createMission({ guildId: interaction.guildId, channelId: channel?.id || interaction.channelId, creatorId: interaction.user.id, title: interaction.options.getString("title", true), description: interaction.options.getString("description", true), goal: interaction.options.getInteger("goal", true) });
+      const text = "**Community mission started**\n" + interaction.options.getString("title", true) + "\n" + interaction.options.getString("description", true) + "\nGoal: " + mission.goal + "\nMission ID: `" + mission.id + "`\nContribute with `/mission-progress mission_id:" + mission.id + " amount:1`.";
+      const dest = channel?.isTextBased() ? channel : interaction.channel;
+      await dest.send({ content: text }).catch(() => {});
+      await interaction.reply({ content: "Mission created. ID: `" + mission.id + "`", ephemeral: true }); return;
+    }
+    if (command === "mission-progress") {
+      const missionId = interaction.options.getString("mission_id", true).trim(), amount = interaction.options.getInteger("amount", true);
+      const result = await missionProgress({ guildId: interaction.guildId, missionId, userId: interaction.user.id, amount });
+      if (result.channelId) {
+        const channel = await interaction.guild.channels.fetch(result.channelId).catch(() => null);
+        if (channel?.isTextBased()) await channel.send({ content: "Mission **" + result.title + "** progress: **" + result.progress + "/" + result.goal + "**" + (result.status === "completed" ? "\n🎉 Mission completed!" : "") }).catch(() => {});
+      }
+      await interaction.reply({ content: "Progress saved: **" + result.progress + "/" + result.goal + "**" + (result.status === "completed" ? ". Mission complete!" : "."), ephemeral: true }); return;
+    }
+    if (command === "mission-list") {
+      const missions = await listActiveMissions(interaction.guildId);
+      const body = missions.length ? missions.map(m => "• **" + String(m.title || "Mission").slice(0, 100) + "** — " + Number(m.progress || 0) + "/" + Number(m.goal || 0) + " · ID `" + m.id + "`").join("\n") : "No active missions.";
+      await interaction.reply({ content: body.slice(0, 1900), ephemeral: true }); return;
+    }
+    if (command === "chat-health") {
+      if (!isModerator(interaction, PermissionFlagsBits.ManageGuild)) { await interaction.reply({ content: "You need Manage Server permission.", ephemeral: true }); return; }
+      await interaction.deferReply({ ephemeral: true });
+      const rows = await snapshotChatHealth(interaction.guildId);
+      const body = rows.length ? rows.slice(0, 15).map((r, i) => (i+1) + ". <@" + r.userId + "> — " + r.messages7d + " messages / 7 days").join("\n") : "No chat activity recorded yet.";
+      await interaction.editReply("**Chat Health Monitor · 7-day activity**\n" + body); return;
+    }
+    if (command === "companion") {
+      const sub = interaction.options.getSubcommand();
+      if (sub === "ask") {
+        await interaction.deferReply({ ephemeral: true });
+        const question = interaction.options.getString("question", true);
+        const settings = await getGuildSettings(interaction.guildId);
+        const answer = await require("./ai-provider").answerQuestion(settings, question, "Server: " + interaction.guild.name);
+        await saveCompanionQuestion({ guildId: interaction.guildId, userId: interaction.user.id, question, answer });
+        await interaction.editReply("**Smart Chat Companion**\n" + answer + "\n\nSaved to your private 24-hour recap. Use `/companion recap` to DM yourself recent Q&A."); return;
+      }
+      const recap = await getCompanionRecap(interaction.guildId, interaction.user.id);
+      if (!recap.length) { await interaction.reply({ content: "No active Q&A to recap. Ask with `/companion ask`; saved Q&A expires after 24 hours.", ephemeral: true }); return; }
+      const body = recap.reverse().map((q, i) => "**Q" + (i+1) + ":** " + q.question + "\n**A:** " + q.answer).join("\n\n").slice(0, 1850);
+      await interaction.user.send({ content: "**THE DC BOT — your 24-hour Q&A recap**\n" + body }).then(() => interaction.reply({ content: "I sent your Q&A recap by DM.", ephemeral: true })).catch(() => interaction.reply({ content: "I couldn't DM you. Enable DMs and try again.", ephemeral: true })); return;
     }
   } catch (error) {
     console.error("Command failed:", command, error);
