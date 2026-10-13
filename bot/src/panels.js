@@ -5,6 +5,7 @@ const {
 } = require("discord.js");
 const { getGuildSettings, patchGuildSettings } = require("./guild-settings");
 const { getDb } = require("./db");
+const { scheduleAction, cancelScheduledActions } = require("./persistent-timers");
 
 const dashUrl = process.env.DASHBOARD_URL || "https://thedcbot.vercel.app/api/auth/discord";
 
@@ -166,7 +167,9 @@ async function handlePanelInteraction(interaction) {
         const n = Number(interaction.fields.getTextInputValue("duration"));
         if (!Number.isInteger(n) || n < 1 || n > 40320) { await interaction.reply({ content: "Timeout duration must be 1–40320 minutes.", ephemeral: true }); return true; }
         duration = n + " minutes";
-        await member.timeout(n * 60000, reason);
+        const timerId = await scheduleAction({ guildId: interaction.guildId, userId: member.id, action: "timeout-expire", executeAt: new Date(Date.now() + n * 60000), moderatorId: interaction.user.id, reason });
+        try { await member.timeout(n * 60000, reason); await cancelScheduledActions({ guildId: interaction.guildId, userId: member.id, action: "timeout-expire", excludeId: timerId }); }
+        catch (error) { await getDb().collection("scheduledActions").doc(timerId).update({ status: "cancelled", cancelledAt: new Date(), lastError: "Panel timeout application failed" }).catch(() => {}); throw error; }
       } else if (action === "kick") {
         await member.kick(reason);
       } else {
@@ -176,6 +179,7 @@ async function handlePanelInteraction(interaction) {
       if (!has(interaction, PermissionFlagsBits.ModerateMembers)) { await interaction.reply({ content: "You need Moderate Members permission.", ephemeral: true }); return true; }
       if (!member.moderatable) { await interaction.reply({ content: "The bot cannot edit this member due to role hierarchy.", ephemeral: true }); return true; }
       await member.timeout(null, reason || "Timeout removed by moderator");
+      await cancelScheduledActions({ guildId: interaction.guildId, userId: member.id, action: "timeout-expire" });
     }
     const dmSent = await dmMember(member.user, interaction.guild, interaction.user, action, reason, duration);
     await logAction(interaction.guildId, {

@@ -4,7 +4,7 @@ Discord community bot starter with Firebase Cloud Firestore persistence, configu
 
 ## Current status
 
-This is an evolving implementation; test in a private Discord server first. Welcome/goodbye handlers, rules configuration, slash-command moderation (timeout, untimeout, kick, ban, clear, modlogs), and dashboard moderation controls are implemented. Giveaway persistence helpers exist, but complete giveaway slash commands and winner selection are not yet wired into the bot.
+This is an evolving implementation; test in a private Discord server first. Implemented modules include welcome/goodbye, configurable text-rule checks, slash-command and dashboard moderation, persistent timeout/temporary-ban recovery, retryable giveaway result announcements, member profiles and reputation announcements, moderation points, private parties with working activity tracking, community missions, Smart Chat Companion Q&A recap, and Chat Health snapshots. Text-rule detectors include rapid/repeated messages, links/invites, mentions, emoji/sticker/attachment spam, caps, character floods, promotion signals, and configurable blacklist phrases. Voice rules cannot infer spoken content; test rules in a private server before relying on them.
 
 ## Structure
 
@@ -32,6 +32,12 @@ For local testing, create `bot/.env` and set the same variables. The service-acc
 - `giveaways` — persistent giveaway data
 - `_health/connection` — Firebase connection check and periodic bot heartbeat
 - `guildSettings` — per-server dashboard configuration
+- `scheduledActions` — persistent timed punishment jobs and retry state
+- `memberProfiles`, `reputationEvents`, `moderationPointsEvents` — member stats and moderation point/reputation history
+- `parties` — private party ownership, membership, and expiry
+- `missions` — community mission progress
+- `companionQuestions` — 24-hour Q&A recap records
+- `chatHealthDaily`, `chatHealthSnapshots` — daily chat activity and seven-snapshot retention
 
 The bot uses Firebase Admin SDK on the server, which bypasses client Firestore security rules. Keep the service-account key secret, never commit it, and do not grant public database access. Use Firestore security rules to deny direct client access unless a properly authenticated dashboard is added later.
 
@@ -52,7 +58,7 @@ In the Discord Developer Portal, open your application → OAuth2 and add the ex
 
 The dashboard only lists servers where the signed-in Discord user owns the server or has Manage Server permission. Keep OAuth secrets and Firebase service-account JSON out of browser code and Git commits.
 
-The dashboard and slash commands share per-server `guildSettings` for welcome/goodbye and rules. In the dashboard, choose channels, customize messages, and save. The bot's moderation API uses Discord permissions and role hierarchy; the bot must be allowed to timeout/kick/ban members. The health panel reports the bot online only when a recent Firestore heartbeat is present.
+The dashboard and slash commands share per-server `guildSettings` for welcome/goodbye, rules, and spam policies. The dashboard includes server-scoped moderation logs, one-click moderation points, giveaway creation/listing, Chat Health analytics, and encrypted AI-key settings. The bot's moderation API uses Discord permissions and role hierarchy; the bot must be allowed to timeout/kick/ban members and manage party channels. The health panel reports the bot online only when a recent Firestore heartbeat is present.
 
 
 ## Gemini / DeepSeek AI moderation
@@ -83,3 +89,30 @@ Add `AI_KEY_ENCRYPTION_SECRET` to Railway service variables. It must be a random
 
 
 AI usage note: To reduce token spend, the AI path first uses lightweight candidate signals (links/invites, repeated characters, long messages, mass mentions, and selected rule-related keywords). This is a cost-saving prefilter, so it can miss subtle violations that do not trigger those signals; it is not a guarantee that every message is AI-reviewed. Provider free tiers and pricing can change.
+
+
+## Persistent timers and restart recovery
+
+Timed actions are stored in the existing Firestore project in a new `scheduledActions` collection. Existing collections and Firebase configuration are not cleared or reset.
+
+- Bot-managed timeouts are recorded with an absolute expiry timestamp.
+- Optional temporary `/ban` uses `duration_hours` (1–8760); omit it for a permanent ban.
+- On startup and every 15 seconds, the bot checks due actions against the current time rather than restarting their duration.
+- Expired timed bans are unbanned and expired timeouts are reconciled; the bot attempts a direct-message notification and records completion/DM delivery in moderation logs.
+- Failed scheduled actions are retried with backoff and marked failed after five attempts; inspect Railway logs and Firestore `scheduledActions` for failures.
+- Giveaway records in the existing `giveaways` collection retain their saved `endsAt`; this timer worker does not erase giveaway or other existing Firebase data.
+
+After deploying this branch, run `npm run deploy-commands` from the `bot` directory once so Discord updates the optional `/ban duration_hours` option. Ensure the bot role has Ban Members and Moderate Members permissions and can DM members where their privacy settings allow it.
+
+
+## New community commands
+
+- `/giveaway-create`, `/giveaway-join`, `/giveaway-list` — persistent giveaways with absolute end timestamps and winner announcement after downtime recovery.
+- `/profile`, `/rep-add`, `/points-add` — member profile, reputation, and moderation points.
+- `/party-config`, `/party-list`, `/party-create`, `/party-join`, `/party-leave`, `/party-close` — public party finder, private owner-managed or temporary party channels, inactivity warning and auto-close.
+- `/welcome-setup` and `/goodbye-setup` — direct channel/template setup commands.
+- `/mission-create`, `/mission-progress`, `/mission-list` — persistent community progress goals.
+- `/companion ask`, `/companion recap` — uses the server's configured Gemini/DeepSeek provider and can DM the member's active Q&A recap; records expire after 24 hours.
+- `/chat-health` — moderator-only seven-day activity summary.
+
+Run `npm run deploy-commands` from `bot/` after updating the bot. The dashboard deployment needs its existing OAuth, session, Firebase, and Discord bot environment variables. The new API routes are server-side only; never put service-account credentials or the Discord token in browser code.
