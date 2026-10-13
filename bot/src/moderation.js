@@ -103,6 +103,11 @@ function inspectMessage(message, rules = [], spamConfig = {}, rulePolicies = {})
     } else if (["advertising","links"].includes(kind)) {
       matched = isLink && !detectPromotionChannel(message.channel);
       reason = "Possible promotion outside an allowed promotion channel";
+    } else if (kind === "blacklist") {
+      const terms = Array.isArray(policy.blacklistTerms) ? policy.blacklistTerms : String(policy.blacklistTerms || "").split(/[\\n,]/);
+      const hit = terms.map(term => String(term || "").trim().toLowerCase()).filter(Boolean).find(term => normalized.includes(term));
+      matched = Boolean(hit);
+      reason = hit ? "Blacklisted phrase matched: " + hit.slice(0, 80) : "Blacklisted phrase";
     } else if (kind === "review") {
       const lower = content.toLowerCase();
       matched = /(free nitro|steam gift|crypto giveaway|double your money|send me your password)/i.test(lower);
