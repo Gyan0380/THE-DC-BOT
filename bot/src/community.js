@@ -201,7 +201,7 @@ async function getCompanionRecap(guildId, userId) {
 
 async function runCommunityMaintenance(client) {
   const db = getDb();
-  const parties = await db.collection("parties").where("status", "==", "active").limit(300).get().catch(() => null);
+  const parties = await db.collection("parties").where("status", "==", "active").get().catch(() => null);
   if (parties) for (const doc of parties.docs) {
     const data = doc.data();
     const expiry = data.expiresAt?.toDate ? data.expiresAt.toDate().getTime() : Date.parse(data.expiresAt || "");
@@ -220,7 +220,7 @@ async function runCommunityMaintenance(client) {
     await doc.ref.update({ status: isTemporaryExpired ? "expired" : "closed", closedAt: now(), closeReason: isTemporaryExpired ? "temporary_expiry" : "inactive_7_days" }).catch(() => {});
     if (channel) await channel.delete(isTemporaryExpired ? "Temporary party expired" : "Inactive party auto-closed after seven days").catch(() => {});
   }
-  const qna = await db.collection("companionQuestions").where("status", "==", "active").limit(300).get().catch(() => null);
+  const qna = await db.collection("companionQuestions").where("status", "==", "active").get().catch(() => null);
   if (qna) for (const doc of qna.docs) {
     const expiry = doc.data().expiresAt?.toDate ? doc.data().expiresAt.toDate().getTime() : Date.parse(doc.data().expiresAt || "");
     if (Number.isFinite(expiry) && expiry <= Date.now()) await doc.ref.delete().catch(() => {});
