@@ -118,6 +118,7 @@ export async function POST(request) {
     } catch (error) { console.error("Could not save dashboard moderation log:", error); }
     return NextResponse.json({ ok: true, dmSent, message: action + " completed for member ID " + userId + (action === "ban" && durationHours ? " for " + durationHours + " hour(s)." : ".") + " DM " + (dmSent ? "sent." : "could not be delivered; the member may have DMs disabled.") });
   } catch {
+    if (timerRef) await timerRef.update({ status: "cancelled", cancelledAt: new Date(), lastError: "Discord request failed before confirmation" }).catch(() => {});
     return NextResponse.json({ error: "Could not contact Discord. Try again." }, { status: 502 });
   }
 }
