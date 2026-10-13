@@ -109,7 +109,8 @@ After deploying this branch, run `npm run deploy-commands` from the `bot` direct
 
 - `/giveaway-create`, `/giveaway-join`, `/giveaway-list` — persistent giveaways with absolute end timestamps and winner announcement after downtime recovery.
 - `/profile`, `/rep-add`, `/points-add` — member profile, reputation, and moderation points.
-- `/party-create`, `/party-join`, `/party-leave`, `/party-close` — private, owner-managed or temporary party channels.
+- `/party-config`, `/party-list`, `/party-create`, `/party-join`, `/party-leave`, `/party-close` — public party finder, private owner-managed or temporary party channels, inactivity warning and auto-close.
+- `/welcome-setup` and `/goodbye-setup` — direct channel/template setup commands.
 - `/mission-create`, `/mission-progress`, `/mission-list` — persistent community progress goals.
 - `/companion ask`, `/companion recap` — uses the server's configured Gemini/DeepSeek provider and can DM the member's active Q&A recap; records expire after 24 hours.
 - `/chat-health` — moderator-only seven-day activity summary.
