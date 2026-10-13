@@ -5,6 +5,7 @@ const {
 } = require("discord.js");
 const { getGuildSettings, patchGuildSettings } = require("./guild-settings");
 const { getDb } = require("./db");
+const { scheduleAction } = require("./persistent-timers");
 
 const dashUrl = process.env.DASHBOARD_URL || "https://thedcbot.vercel.app/api/auth/discord";
 
@@ -167,6 +168,7 @@ async function handlePanelInteraction(interaction) {
         if (!Number.isInteger(n) || n < 1 || n > 40320) { await interaction.reply({ content: "Timeout duration must be 1–40320 minutes.", ephemeral: true }); return true; }
         duration = n + " minutes";
         await member.timeout(n * 60000, reason);
+        await scheduleAction({ guildId: interaction.guildId, userId: member.id, action: "timeout-expire", executeAt: new Date(Date.now() + n * 60000), moderatorId: interaction.user.id, reason });
       } else if (action === "kick") {
         await member.kick(reason);
       } else {
