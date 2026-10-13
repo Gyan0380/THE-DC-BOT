@@ -83,3 +83,17 @@ Add `AI_KEY_ENCRYPTION_SECRET` to Railway service variables. It must be a random
 
 
 AI usage note: To reduce token spend, the AI path first uses lightweight candidate signals (links/invites, repeated characters, long messages, mass mentions, and selected rule-related keywords). This is a cost-saving prefilter, so it can miss subtle violations that do not trigger those signals; it is not a guarantee that every message is AI-reviewed. Provider free tiers and pricing can change.
+
+
+## Persistent timers and restart recovery
+
+Timed actions are stored in the existing Firestore project in a new `scheduledActions` collection. Existing collections and Firebase configuration are not cleared or reset.
+
+- Bot-managed timeouts are recorded with an absolute expiry timestamp.
+- Optional temporary `/ban` uses `duration_hours` (1–8760); omit it for a permanent ban.
+- On startup and every 15 seconds, the bot checks due actions against the current time rather than restarting their duration.
+- Expired timed bans are unbanned and expired timeouts are reconciled; the bot attempts a direct-message notification and records completion/DM delivery in moderation logs.
+- Failed scheduled actions are retried with backoff and marked failed after five attempts; inspect Railway logs and Firestore `scheduledActions` for failures.
+- Giveaway records in the existing `giveaways` collection retain their saved `endsAt`; this timer worker does not erase giveaway or other existing Firebase data.
+
+After deploying this branch, run `npm run deploy-commands` from the `bot` directory once so Discord updates the optional `/ban duration_hours` option. Ensure the bot role has Ban Members and Moderate Members permissions and can DM members where their privacy settings allow it.
